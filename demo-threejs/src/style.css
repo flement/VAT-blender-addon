@@ -1,21 +1,14 @@
-:root {
-  color-scheme: dark;
-  --panel-bg: rgb(16 18 24 / 88%);
-  --text: #e8eaf0;
-  --accent: #4da3ff;
-}
-
 * {
   box-sizing: border-box;
+  border-radius: 0 !important;
 }
 
 html,
 body {
   margin: 0;
   height: 100%;
-  background: #0b0d12;
-  color: var(--text);
-  font-family: ui-sans-serif, system-ui, sans-serif;
+  font-family: "Courier New", ui-monospace, Menlo, monospace;
+  font-size: 12px;
   overflow: hidden;
 }
 
@@ -28,47 +21,27 @@ body {
 
 #panel {
   position: fixed;
-  top: 12px;
-  left: 12px;
-  width: 280px;
-  max-height: calc(100% - 24px);
+  top: 0;
+  left: 0;
+  width: 300px;
+  height: 100%;
+  max-height: 100%;
   overflow-y: auto;
-  background: var(--panel-bg);
-  border: 1px solid rgb(255 255 255 / 12%);
-  border-radius: 12px;
-  padding: 14px;
-  backdrop-filter: blur(8px);
-}
-
-#panel h1 {
-  margin: 0 0 4px;
-  font-size: 15px;
+  background: white;
+  padding: 0;
 }
 
 #panel section {
-  margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px solid rgb(255 255 255 / 10%);
-}
-
-#panel section:first-of-type {
-  border-top: none;
-  padding-top: 0;
-  margin-top: 8px;
+  border-bottom: 1px solid black;
+  padding: 10px 14px 12px;
 }
 
 #panel h2 {
-  margin: 0 0 8px;
+  margin: 0 0 10px;
   font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  opacity: 0.7;
-}
-
-.hint-inline {
-  text-transform: none;
-  letter-spacing: normal;
-  font-weight: normal;
+  letter-spacing: 0.08em;
+  border-bottom: none;
+  padding-bottom: 0;
 }
 
 .row {
@@ -76,30 +49,30 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  font-size: 12px;
-  margin-bottom: 6px;
+  margin: 0;
+  padding: 6px 0;
+  border-top: none;
 }
 
 .row input[type="number"],
 .row select {
-  width: 110px;
-  background: #242832;
-  color: var(--text);
-  border: 1px solid rgb(255 255 255 / 15%);
-  border-radius: 6px;
+  width: 120px;
+  border: 1px solid black;
+  outline: none;
   padding: 4px 6px;
-  font-size: 12px;
+  font: inherit;
 }
 
 .row input[type="range"] {
-  width: 110px;
-  accent-color: var(--accent);
+  width: 120px;
+  accent-color: black;
 }
 
 .row input[type="checkbox"] {
   width: 16px;
   height: 16px;
-  accent-color: var(--accent);
+  accent-color: black;
+  appearance: auto;
 }
 
 .row output {
@@ -109,61 +82,60 @@ body {
 .btn-row {
   display: flex;
   gap: 8px;
-  margin-top: 8px;
+  margin-top: 10px;
 }
 
 .btn-row button {
   flex: 1;
-  background: #2a3040;
-  color: var(--text);
-  border: 1px solid rgb(255 255 255 / 15%);
-  border-radius: 6px;
-  padding: 6px;
-  font-size: 12px;
+  background: white;
+  color: black;
+  border: 1px solid black;
+  padding: 8px;
+  font: inherit;
   cursor: pointer;
 }
 
 .btn-row button:hover {
-  border-color: var(--accent);
-}
-
-.hint {
-  margin: 0 0 10px;
-  font-size: 12px;
-  opacity: 0.75;
+  background: black;
+  color: white;
 }
 
 .slot {
-  border: 1px dashed rgb(255 255 255 / 25%);
-  border-radius: 8px;
+  border: 1px solid black;
   padding: 8px 10px;
   margin-bottom: 8px;
   cursor: pointer;
-  font-size: 12px;
+  background: white;
 }
 
 .slot:hover,
 .slot.drop-hint {
-  border-color: var(--accent);
-  background: rgb(77 163 255 / 10%);
+  background: black;
+  color: white;
 }
 
 .slot-name {
-  display: block;
-  font-weight: 600;
+  font-weight: bold;
 }
 
 .slot-file {
-  opacity: 0.7;
+  display: block;
+  margin-top: 2px;
   word-break: break-all;
+  text-decoration: underline;
 }
 
 #status {
-  margin: 4px 0 0;
+  margin: 8px 0 0;
   font-size: 11px;
-  line-height: 1.5;
-  white-space: pre-wrap;
-  opacity: 0.85;
+  padding-top: 6px;
+}
+
+.foot {
+  padding: 10px 14px;
+  font-size: 11px;
+  display: flex;
+  justify-content: space-between;
 }
 
 .overlay {
@@ -179,15 +151,14 @@ body {
 }
 
 .overlay-card {
-  background: var(--panel-bg);
-  border: 1px solid rgb(255 255 255 / 12%);
-  border-radius: 12px;
+  background: white;
+  border: 1px solid black;
   padding: 12px 18px;
-  font-size: 14px;
-  backdrop-filter: blur(8px);
+  font-size: 13px;
 }
 
 .overlay-card.error {
-  border-color: #ff6b6b;
+  background: black;
+  color: white;
   pointer-events: auto;
 }
