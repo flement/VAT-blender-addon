@@ -1,24 +1,17 @@
 import {
-  ACESFilmicToneMapping,
   Box3,
-  DataTexture,
   DirectionalLight,
-  GridHelper,
-  HemisphereLight,
-  LinearFilter, NearestFilter,
+  DirectionalLightHelper,
+  GridHelper, LinearFilter,
+  NearestFilter,
   NoColorSpace,
   PerspectiveCamera,
-  PMREMGenerator,
-  RepeatWrapping,
-  RGBAFormat,
   Scene,
   TextureLoader,
   Timer,
-  UnsignedByteType,
   Vector3,
   WebGLRenderer,
 } from 'three'
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { EXRLoader } from 'three/addons/loaders/EXRLoader.js'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
@@ -62,10 +55,7 @@ scene.add(new GridHelper(10, 20))
 const sun = new DirectionalLight(0xffffff, 2.5)
 sun.position.set(4, 6, 3)
 scene.add(sun)
-scene.add(new HemisphereLight(0xbfd4ff, 0x30281e, 0.6))
-const pmrem = new PMREMGenerator(renderer)
-scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture
-pmrem.dispose()
+scene.add(sun.target)
 const camera = new PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 100)
 camera.position.set(4, 3, 6)
 const controls = new OrbitControls(camera, renderer.domElement)
@@ -181,6 +171,7 @@ function syncPanelInputs() {
   for (const input of panelInputs) {
     const key = input.dataset.param
     if (input.type === 'checkbox') input.checked = params[key]
+    else if (input.tagName === 'SELECT') input.value = params[key]
     else input.value = params[key]
     if (key === 'time') input.max = frameDuration()
   }

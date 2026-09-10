@@ -6,8 +6,9 @@ import { DoubleSide, MeshStandardMaterial } from 'three'
  * VAT displacement + baked normals are injected via onBeforeCompile.
  *
  * Sampling follows README.md: frame fraction over totalFrames, sampled as
- * vec2(uv1.x, uv1.y - frame). Textures need RepeatWrapping and
- * texture.flipY = bake flip_y (see main.js prepareTexture).
+ * vec2(uv1.x, uv1.y - frame). The normal sample mirrors V in-shader
+ * (1.0 - vatUv.y) so the PNG keeps the default TextureLoader flipY = true
+ * while sampling the same row as the EXR positions (which ignore flipY).
  */
 export function createVatMaterial({ positionTexture, normalTexture, params }) {
   const uniforms = {
@@ -49,7 +50,8 @@ export function createVatMaterial({ positionTexture, normalTexture, params }) {
           vec2 vatUv = vec2(uv1.x, uv1.y - vatFrame);
           vec4 vatOffset = texture2D(posTexture, vatUv);
           if (denormalize) vatOffset.xyz = vatOffset.xyz * (maxOffset - minOffset) + minOffset;
-          objectNormal = (texture2D(normalTexture, vatUv) * 2.0 - 1.0).xzy;
+          vec2 vatNormalUv = vec2(vatUv.x, 1.0 - vatUv.y);
+          objectNormal = (texture2D(normalTexture, vatNormalUv) * 2.0 - 1.0).xzy;
           `,
         )
         .replace(

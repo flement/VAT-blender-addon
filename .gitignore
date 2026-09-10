@@ -3,3 +3,4 @@ node_modules
 dist
 *.blend1
 AGENTS.md
+.idea
