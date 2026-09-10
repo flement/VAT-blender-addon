@@ -1,0 +1,5 @@
+bun.lock
+node_modules
+dist
+*.blend1
+AGENTS.md

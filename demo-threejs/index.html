@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>VAT Lab</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app"></div>
+    <aside id="panel">
+      <h1>VAT lab</h1>
+
+      <section>
+        <h2>Assets</h2>
+        <div class="slot" data-slot="mesh" role="button" tabindex="0">
+          <span class="slot-name">Mesh (.glb)</span>
+          <span class="slot-file" data-slot-label="mesh">vat_test.glb</span>
+          <input type="file" accept=".glb,.gltf" hidden />
+        </div>
+        <div class="slot" data-slot="positions" role="button" tabindex="0">
+          <span class="slot-name">Positions (.exr / .png)</span>
+          <span class="slot-file" data-slot-label="positions">positions.exr</span>
+          <input type="file" accept=".exr,.png" hidden />
+        </div>
+        <div class="slot" data-slot="normals" role="button" tabindex="0">
+          <span class="slot-name">Normals (.png, optional)</span>
+          <span class="slot-file" data-slot-label="normals">normals.png</span>
+          <input type="file" accept=".png" hidden />
+        </div>
+        <pre id="status">Loading…</pre>
+      </section>
+
+      <section>
+        <h2>Bake params <span class="hint-inline">— wrap NONE, match Blender</span></h2>
+        <label class="row"><span>Frames</span><input type="number" data-param="frames" min="1" max="1024" step="1" /></label>
+        <label class="row"><span>Position mode</span>
+          <select data-param="positionMode">
+            <option selected>offsets</option><option>absolutes</option>
+          </select>
+        </label>
+        <label class="row check"><span>flip_y (Blender)</span><input type="checkbox" data-param="flipY" /></label>
+        <label class="row check"><span>Normalize (PNG)</span><input type="checkbox" data-param="normalize" /></label>
+        <label class="row"><span>Min offset</span><input type="number" data-param="minOffset" step="any" /></label>
+        <label class="row"><span>Max offset</span><input type="number" data-param="maxOffset" step="any" /></label>
+      </section>
+
+      <section>
+        <h2>Playback</h2>
+        <label class="row check"><span>Play</span><input type="checkbox" data-param="playing" /></label>
+        <label class="row"><span>Time (s)</span><input type="range" data-param="time" min="0" step="0.001" /></label>
+        <label class="row"><span>FPS</span><input type="number" data-param="fps" min="1" max="120" step="1" /></label>
+        <label class="row check"><span>Reverse</span><input type="checkbox" data-param="reverse" /></label>
+        <div class="row"><span>Frame</span><output id="frame-readout">0</output></div>
+        <div class="btn-row">
+          <button id="btn-frame-mesh" type="button">Frame mesh</button>
+          <button id="btn-reload" type="button">Reload</button>
+        </div>
+      </section>
+    </aside>
+    <div id="overlay" class="overlay">
+      <div id="overlay-text" class="overlay-card">Loading VAT assets…</div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
