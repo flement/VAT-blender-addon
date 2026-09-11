@@ -32,6 +32,8 @@ jobs:
           else
             TAG="${GITHUB_REF_NAME}"
           fi
+          # normalize: accept "1.0.6" or "v1.0.6" -> canonical "v1.0.6"
+          TAG="v${TAG#v}"
           # ponytail: tag vX.Y.Z must equal manifest version, else fail fast
           [ "$TAG" = "v$MANIFEST_VER" ] || { echo "::error::tag $TAG != manifest v$MANIFEST_VER"; exit 1; }
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
