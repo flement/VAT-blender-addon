@@ -182,11 +182,19 @@ def bake_vertex_data(context, self, data, offsets, normals, size):
     )
 
     if vat.normalize:
-        min_offset = min(offsets)
-        max_offset = max(offsets)
-        context.scene['min_offset'] = min_offset
-        context.scene['max_offset'] = max_offset
-        offsets = [normalize(v, min_offset, max_offset) for v in offsets]
+        xyz = [v for i, v in enumerate(offsets) if i % 4 != 3]
+        min_offset = min(xyz)
+        max_offset = max(xyz)
+        span = (max_offset - min_offset) or 1.0
+        vat.min_offset = min_offset
+        vat.max_offset = max_offset
+        for i in range(0, len(offsets), 4):
+            offsets[i] = (offsets[i] - min_offset) / span
+            offsets[i + 1] = (offsets[i + 1] - min_offset) / span
+            offsets[i + 2] = (offsets[i + 2] - min_offset) / span
+        zero = (0.0 - min_offset) / span
+    else:
+        zero = 0.0
 
     if vat.wrap_mode != 'NONE':
         new_offsets = []
@@ -201,7 +209,7 @@ def bake_vertex_data(context, self, data, offsets, normals, size):
                 for j in range(height):
                     lineSample = j * width_pixels + i * optimal_width_pixels
                     new_offsets.extend(offsets[lineSample:lineSample+new_width_pixels])
-                    new_offsets.extend([0,0,0,1] * (optimal_width - new_width))
+                    new_offsets.extend([zero, zero, zero, 1] * (optimal_width - new_width))
                     new_normals.extend(normals[lineSample:lineSample+new_width_pixels])
                     new_normals.extend([0,0,0,1] * (optimal_width - new_width))
                 break
@@ -211,16 +219,16 @@ def bake_vertex_data(context, self, data, offsets, normals, size):
                 new_normals.extend(normals[lineSample:lineSample+optimal_width_pixels])
 
         if vat.wrap_mode == 'WRAP':
-            new_offsets.extend([0,0,0,1] * int(optimal_width * optimal_height - len(new_offsets)/4))
+            new_offsets.extend([zero, zero, zero, 1] * int(optimal_width * optimal_height - len(new_offsets)/4))
             new_normals.extend([0,0,0,1] * int(optimal_width * optimal_height - len(new_normals)/4))
         else:
-            new_offsets.extend([0,0,0,0] * int(optimal_width * height * num_wraps - len(new_offsets)/4))
+            new_offsets.extend([zero, zero, zero, 0] * int(optimal_width * height * num_wraps - len(new_offsets)/4))
             new_normals.extend([0,0,0,0] * int(optimal_width * height * num_wraps - len(new_normals)/4))
 
         offsets = new_offsets
         normals = new_normals
 
-    offsets.extend([0,0,0,0] * (texture_width * texture_height - len(offsets) // 4))
+    offsets.extend([zero, zero, zero, 0] * (texture_width * texture_height - len(offsets) // 4))
     normals.extend([0,0,0,0] * (texture_width * texture_height - len(normals) // 4))
 
     # Flip Y textures
@@ -374,9 +382,9 @@ class VIEW3D_PT_VertexAnimation(bpy.types.Panel):
         col.prop(scene.vat_settings, "position_mode", text="Position Mode")
         col.prop(scene.vat_settings, "flip_y", text="Flip Y")
         col.prop(scene.vat_settings, "normalize", text="Normalize (useful for png)")
-        if scene.vat_settings.normalize and scene.get('min_offset') and scene.get('max_offset'):
-            col.label(text=f"Min Offset: {scene.min_offset:.4f}")
-            col.label(text=f"Max Offset: {scene.max_offset:.4f}")
+        if scene.vat_settings.normalize:
+            col.label(text=f"Min Offset: {scene.vat_settings.min_offset:.4f}")
+            col.label(text=f"Max Offset: {scene.vat_settings.max_offset:.4f}")
         col.prop(scene.vat_settings, "wrap_mode", text="Wrap Mode")
         if scene.vat_settings.wrap_mode != 'NONE':
             optimal_width, optimal_height, num_wraps = calculate_optimal_vat_resolution(len(obj.data.vertices), len(frame_range(scene)))
