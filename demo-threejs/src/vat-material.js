@@ -1,9 +1,21 @@
-import { MeshStandardMaterial } from 'three'
+import { MeshStandardNodeMaterial } from 'three/webgpu'
+import {
+  attribute,
+  float,
+  mod,
+  positionLocal,
+  select,
+  texture,
+  transformNormalToView,
+  uniform,
+  varying,
+  vec2,
+} from 'three/tsl'
 
 /**
  * VAT material for NONE / WRAP / WRAP_CROP exports of VAT/__init__.py, built
- * on MeshStandardMaterial so real three.js lights, env and tone mapping apply.
- * VAT displacement + baked normals are injected via onBeforeCompile.
+ * on MeshStandardNodeMaterial so real three.js lights, env and tone mapping apply.
+ * VAT displacement + baked normals are injected via TSL nodes (no GLSL strings).
  *
  * Layout (bake: OFFSETS, flip_y ON, normalize OFF, positions EXR written by
  * the export script as half-float planar ABGR — Blender's image.save() EXR
@@ -27,61 +39,39 @@ export function createVatMaterial({ positionTexture, normalTexture, params }) {
   const uniforms = {
     posTexture: { value: positionTexture },
     normalTexture: { value: normalTexture },
-    frameCount: { value: params.frames },
-    numWraps: { value: params.numWraps },
-    texHeight: { value: params.texHeight },
-    isOffsets: { value: params.positionMode === 'offsets' },
-    denormalize: { value: params.normalize },
-    minOffset: { value: params.minOffset },
-    maxOffset: { value: params.maxOffset },
-    frame: { value: 0 },
+    frameCount: uniform(params.frames),
+    numWraps: uniform(params.numWraps),
+    texHeight: uniform(params.texHeight),
+    isOffsets: uniform(params.positionMode === 'offsets'),
+    denormalize: uniform(params.normalize),
+    minOffset: uniform(params.minOffset),
+    maxOffset: uniform(params.maxOffset),
+    frame: uniform(0),
   }
+  const { frameCount, numWraps, texHeight, isOffsets, denormalize, minOffset, maxOffset, frame } =
+    uniforms
 
-  const material = new MeshStandardMaterial({
+  const uv1 = attribute('uv1')
+  const vatBlock = uv1.y.sub(float(1).div(numWraps)).mul(texHeight).div(frameCount).add(0.5).floor()
+  const vatRow = vatBlock.mul(frameCount).add(frameCount.sub(float(1)).sub(mod(frame, frameCount)))
+  const vatUv = vec2(uv1.x, vatRow.add(0.5).div(texHeight))
+
+  const rawOffset = texture(positionTexture, vatUv)
+  const denormOffset = rawOffset.xyz.mul(maxOffset.sub(minOffset)).add(minOffset)
+  const vatOffset = select(denormalize, denormOffset, rawOffset.xyz)
+
+  const vatNormalUv = vec2(vatUv.x, float(1).sub(vatUv.y))
+  const vatNormalObject = varying(texture(normalTexture, vatNormalUv).mul(2).sub(1).xzy)
+  const vatNormal = transformNormalToView(vatNormalObject)
+
+  const material = new MeshStandardNodeMaterial({
     color: 0x5588ff,
     roughness: 0.5,
     metalness: 0.0,
-    side: 2
+    side: 2,
   })
-
-  material.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, uniforms)
-    shader.vertexShader =
-      `
-      attribute vec2 uv1;
-      uniform sampler2D posTexture;
-      uniform sampler2D normalTexture;
-      uniform float frameCount;
-      uniform float numWraps;
-      uniform float texHeight;
-      uniform bool isOffsets;
-      uniform bool denormalize;
-      uniform float minOffset;
-      uniform float maxOffset;
-      uniform float frame;
-      ` + shader.vertexShader
-        .replace(
-          '#include <beginnormal_vertex>',
-          /* glsl */ `
-          #include <beginnormal_vertex>
-          float vatBlock = floor((uv1.y - 1.0 / numWraps) * texHeight / frameCount + 0.5);
-          float vatRow = vatBlock * frameCount + (frameCount - 1.0 - mod(frame, frameCount));
-          vec2 vatUv = vec2(uv1.x, (vatRow + 0.5) / texHeight);
-          vec4 vatOffset = texture2D(posTexture, vatUv);
-          if (denormalize) vatOffset.xyz = vatOffset.xyz * (maxOffset - minOffset) + minOffset;
-          vec2 vatNormalUv = vec2(vatUv.x, 1.0 - vatUv.y);
-          objectNormal = (texture2D(normalTexture, vatNormalUv) * 2.0 - 1.0).xzy;
-          `,
-        )
-        .replace(
-          '#include <begin_vertex>',
-          /* glsl */ `
-          vec3 transformed = isOffsets ? position + vatOffset.xzy : vatOffset.xzy;
-          `,
-        )
-  }
-  // Injected code is static; a constant key avoids clashes with plain materials.
-  material.customProgramCacheKey = () => 'vat-wrap-all'
+  material.positionNode = select(isOffsets, positionLocal.add(vatOffset.xzy), vatOffset.xzy)
+  material.normalNode = vatNormal
 
   return { material, uniforms }
 }

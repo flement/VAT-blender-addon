@@ -12,18 +12,14 @@ import {
   TextureLoader,
   Timer,
   Vector3,
-  WebGLRenderer,
 } from 'three'
+import { WebGPURenderer } from 'three/webgpu'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { EXRLoader } from 'three/addons/loaders/EXRLoader.js'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
-import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { createVatMaterial, syncVatUniforms } from './vat-material.js'
 import { buildPreview } from './vat-preview.js'
 
-// Bake recipe (fixed, matches public/examples manifest): OFFSETS, flip_y ON,
-// normalize OFF. EXR is uploaded unflipped (EXRLoader default),
-// normals PNG keeps the TextureLoader flipY default; the shader accounts both.
 const params = {
   frames: 30,
   numWraps: 1,
@@ -52,7 +48,8 @@ const statusBox = document.querySelector('#status')
 const frameReadout = document.querySelector('#frame-readout')
 const exampleSelect = document.querySelector('#example-select')
 
-const renderer = new WebGLRenderer({ antialias: true })
+const renderer = new WebGPURenderer({ antialias: true })
+await renderer.init()
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
 renderer.setSize(container.clientWidth, container.clientHeight)
 container.appendChild(renderer.domElement)
@@ -262,8 +259,7 @@ for (const input of panelInputs) {
       refreshPreview()
     }
     if (key === "texFilter" && vat) {
-      const f = params.texFilter === "linear" ? LinearFilter : NearestFilter
-      for (const t of [vat.uniforms.posTexture.value, vat.uniforms.normalTexture.value]) { t.minFilter = t.magFilter = f; t.needsUpdate = true }
+      reloadVat({ frameCamera: false }).catch(() => {})
     }
     if (vat) syncVatUniforms(vat.uniforms, params)
     syncPanelInputs()
