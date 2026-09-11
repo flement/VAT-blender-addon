@@ -58,6 +58,7 @@ Names without a link have no bundled example yet (`demo-threejs/public/examples.
 Two rules:
 1. Bake simulations first (Cache > Bake All Dynamics) — unbaked `CLOTH` / `PARTICLE_SYSTEM` aborts with an error.
 2. Vertex count changes mid-animation (e.g. animated `BOOLEAN`) bake best-effort: rows pad to the largest frame, a warning lists per-frame counts, motion may pop.
+3. Modifiers that rebuild the mesh every frame (`VOLUME_TO_MESH` on an animated field) cannot bake as animation: unlike `EXPLODE` — which moves existing vertices, so pre-splitting faces keeps their identity — remeshing recreates vertices from scratch each frame with no stable identity, so offsets are meaningless and the result tears. No pre-split equivalent exists. Only a static volume (object-level motion) bakes cleanly.
 
 ### EXPLODE tutorial
 
