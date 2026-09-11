@@ -1,7 +1,7 @@
 schema_version = "1.0.0"
 
 id = "VAT"
-version = "1.0.1"
+version = "1.0.6"
 name = "Vertex Animation Texture Addon (VAT)"
 tagline = "Tools for vertex animation textures in Blender"
 maintainer = "flanb"

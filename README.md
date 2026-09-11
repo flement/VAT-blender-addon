@@ -12,7 +12,7 @@ In the generated texture, the vertical axis (top to bottom) corresponds to anima
 In a real-time engine (such as Three.js), the static mesh is imported along with its animation textures. A shader reads these textures frame by frame to move the vertices, thus reproducing the original animation without the need for an armature or complex calculations on the engine side. This method allows exporting complex animations, including those from physics simulations or modifiers, while optimizing rendering performance.
 
 ## Installation
-1. Download this repo (or zip containing the `VAT` folder, with `VAT/__init__.py` + `VAT/blender_manifest.toml`, version 1.0.1).
+1. Download this repo (or zip containing the `VAT` folder, with `VAT/__init__.py` + `VAT/blender_manifest.toml`, version 1.0.5).
 2. In Blender 4.2+, go to **Edit > Preferences > Add-ons**.
 3. Click **Install from Disk...** and select the `VAT` folder (or zip).
 4. Enable the addon in the list.
@@ -32,33 +32,38 @@ In a real-time engine (such as Three.js), the static mesh is imported along with
 
 ## Supported Modifiers
 
-The following Blender modifiers are supported by the VAT addon:
+Every mesh modifier bakes (no allowlist), but only these actually move
+vertices — the rest (collision, UV, weights, normals-only, caches…) bake
+without effect:
 
-| Modifier Name     |
-|-------------------|
-| ARMATURE          |
-| CAST              |
-| CLOTH             |
-| CURVE             |
-| DISPLACE          |
-| HOOK              |
-| LAPLACIANDEFORM   |
-| LATTICE           |
-| MESH_DEFORM       |
-| SHRINKWRAP        |
-| SIMPLE_DEFORM     |
-| SMOOTH            |
-| CORRECTIVE_SMOOTH |
-| LAPLACIANSMOOTH   |
-| SURFACE_DEFORM    |
-| WARP              |
-| WAVE              |
-| PARTICLE_SYSTEM   |
-| EXPLODE           |
+| | | |
+|---|---|---|
+| ARMATURE | ARRAY | BEVEL |
+| BOOLEAN | BUILD | CAST |
+| CLOTH | CURVE | DECIMATE |
+| DISPLACE | EXPLODE | HOOK |
+| LAPLACIANDEFORM | LAPLACIANSMOOTH | LATTICE |
+| MASK | MESH_DEFORM | MIRROR |
+| NODES | OCEAN | PARTICLE_SYSTEM |
+| REMESH | SCREW | SHRINKWRAP |
+| SIMPLE_DEFORM | SMOOTH | CORRECTIVE_SMOOTH |
+| SOFT_BODY | SOLIDIFY | SUBSURF |
+| SURFACE_DEFORM | WARP | WAVE |
+| WIREFRAME | | |
 
-**Warning:** If a modifier changes the number of vertices during the animation (such as `PARTICLE_SYSTEM` or `EXPLODE`), the plugin will not work correctly.
+Two rules:
+1. Bake simulations first (Cache > Bake All Dynamics) — unbaked `CLOTH` / `PARTICLE_SYSTEM` aborts with an error.
+2. Vertex count changes mid-animation (e.g. animated `BOOLEAN`) bake best-effort: rows pad to the largest frame, a warning lists per-frame counts, motion may pop.
 
-For `PARTICLE_SYSTEM`, it is recommended to set both the Emission Frame Start and End to 1 in the panel, and to start the animation at frame 1. This ensures the vertex count remains constant throughout the animation.
+### EXPLODE tutorial
+
+The shader replays bind-pose faces, so chunks must already be separate:
+1. Select the mesh → VAT tab → **Prepare Explode Mesh** (splits every face; flat shading is normal; re-runnable).
+2. Add Particle System + `EXPLODE`.
+3. Cache > Bake All Dynamics.
+4. Select the mesh → **Process Anim Meshes**.
+
+`PARTICLE_SYSTEM` tip: Emission Start = End = 1 keeps the vertex count constant.
 
 ## Usage
 1. Select an animated object in your Blender scene.
@@ -78,14 +83,14 @@ For `PARTICLE_SYSTEM`, it is recommended to set both the Emission Frame Start an
 |               |                                                                         | If `Normalize` is **true**: export as **PNG**, same settings as above                                          | ![image](https://github.com/user-attachments/assets/d2aa6067-f177-4387-acf0-9af945ceaf3f) |
 | `normals`     | Vertex normal animation texture.                                        | **PNG** or other supported formats                                                                             | ![image](https://github.com/user-attachments/assets/d2aa6067-f177-4387-acf0-9af945ceaf3f) |
 
-## Test scene (`blender-tests/`)
-- `blender-tests/vat_test.blend`: timeline 1–31 (step 1). Note `frame_range()` excludes the end frame → 30 baked frames.
-- Covers `WAVE` (OFFSETS / wrap NONE), `SIMPLE_DEFORM` twist (ABSOLUTES + normalize + WRAP_CROP, step 2), `DISPLACE`, `ARMATURE` + `SMOOTH`.
-- Recipe: open in Blender 4.2+ with VAT enabled, select ONE test object (not `export_mesh`), set options in the VAT tab, run `Process Anim Meshes`. See `blender-tests/README.md`.
+## Test scene (`blender-examples/`)
+- `blender-examples/vat_test.blend`: timeline 1–31 (step 1). Note `frame_range()` excludes the end frame → 30 baked frames.
+- Covers one `VAT_*` object per modifier family (ARMATURE, CAST, CLOTH draped on a collider, CURVE, DISPLACE, HOOK, LATTICE, MESH_DEFORM, SHRINKWRAP, SMOOTH family on hook spikes, SURFACE_DEFORM, SIMPLE_DEFORM twist, WARP, WAVE, SUBSURF, pre-split EXPLODE…).
+- Recipe: open in Blender 4.2+ with VAT enabled, select ONE test object (not `export_mesh`), set options in the VAT tab, run `Process Anim Meshes`. See `blender-examples/README.md`.
 
 ## Three.js viewer (`demo-threejs/`)
 - Vite + three 0.186.0 viewer for `NONE` / `WRAP` / `WRAP_CROP` exports. `src/vat-material.js` holds the VAT sampling (`MeshStandardMaterial` + `onBeforeCompile`, normals decoded `*2-1` + `.xzy` swizzle, `vatNormalUv` mirror kept).
-- Run: `cd demo-threejs && bun install && bun run dev` (http://localhost:5173). Ships 4 bundled `VAT_*` examples with an EXAMPLE select; drop in Mesh `.glb` + Positions `.exr`/`.png` + Normals `.png`, tune bake params mirroring the Blender tab. See `demo-threejs/README.md`.
+- Run: `cd demo-threejs && bun install && bun run dev` (http://localhost:5173). Ships 19 bundled `VAT_*` examples (each mesh recentered on origin) with an EXAMPLE select; drop in Mesh `.glb` + Positions `.exr`/`.png` + Normals `.png`, tune bake params mirroring the Blender tab. See `demo-threejs/README.md`.
 
 ## Usage for threejs
 Blender uses Z as the up axis, while in Three.js the up axis is Y. Therefore, when sampling the position texture in GLSL, you should use `texturePos.xzy` to correctly map the axes.

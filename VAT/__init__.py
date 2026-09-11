@@ -22,7 +22,7 @@
 bl_info = {
     "name": "VAT",
     "author": "Joshua Bogart and Clément Renou",
-    "version": (1, 0, 1),
+    "version": (1, 0, 6),
     "blender": (4, 2, 0),
     "location": "View3D > Sidebar > VAT Tab",
     "description": "A tool for storing per frame vertex data for use in a vertex shader.",
@@ -59,7 +59,7 @@ def get_per_frame_mesh_data(context, data, objects):
 
 def calculate_optimal_vat_resolution(num_vertices, num_frames):
     total_pixels = num_vertices * num_frames
-    approx_side = math.sqrt(total_pixels)
+    approx_side = max(math.sqrt(total_pixels), 1)
 
     def closest_power_of_2(n):
         return 2 ** math.floor(math.log2(n))
@@ -73,7 +73,7 @@ def calculate_optimal_vat_resolution(num_vertices, num_frames):
         else:
             height *= 2
 
-    num_wraps = math.ceil(num_vertices / width)
+    num_wraps = max(math.ceil(max(num_vertices, 1) / width), 1)
 
     return width, height, num_wraps
 
@@ -107,15 +107,29 @@ def create_export_mesh_object(context, data, me, size):
 
 
 def get_vertex_data(context, data, meshes):
-    """Return lists of vertex offsets and normals from a list of mesh data"""
+    """Return lists of vertex offsets and normals from a list of mesh data.
+
+    Frames may hold different vertex counts (EXPLODE, BOOLEAN, ...): rows are
+    sized to the largest frame; short frames repeat their last vertex
+    (degenerate) and verts missing from the bind pose fall back to absolutes
+    (their texels stay unsampled: export_mesh keeps bind-pose topology).
+    """
     vat = context.scene.vat_settings
     original = meshes[0].vertices
+    max_count = max(len(me.vertices) for me in meshes)
     offsets = []
     normals = []
     for me in reversed(meshes):
-        for v in me.vertices:
-            if vat.position_mode == 'OFFSETS':
-                offset = v.co - original[v.index].co
+        verts = me.vertices
+        last = verts[-1] if len(verts) else None
+        for i in range(max_count):
+            v = verts[i] if i < len(verts) else last
+            if v is None:
+                offsets.extend((0, 0, 0, 1))
+                normals.extend((0.5, 0.5, 0.5, 1))
+                continue
+            if vat.position_mode == 'OFFSETS' and i < len(original):
+                offset = v.co - original[i].co
             else:
                 offset = v.co
             x, y, z = offset
@@ -144,7 +158,7 @@ def bake_vertex_data(context, self, data, offsets, normals, size):
         optimal_width, optimal_height, num_wraps = calculate_optimal_vat_resolution(width, height)
         texture_width = optimal_width
     else:
-        texture_width = width
+        texture_width = max(width, 1)
 
     if vat.wrap_mode == 'WRAP':
         texture_height = optimal_height
@@ -226,25 +240,22 @@ def bake_vertex_data(context, self, data, offsets, normals, size):
         normal_texture.pixels = normals
 def is_simulation_baked(ob, mod_type):
     for mod in ob.modifiers:
-        if mod.type == mod_type and mod.point_cache.is_baked:
-            return True
-    return False
+        if mod.type != mod_type:
+            continue
+        if mod_type == 'PARTICLE_SYSTEM':
+            psys = mod.particle_system
+            cache = getattr(psys, 'point_cache', None) if psys else None
+            if not getattr(cache, 'is_baked', False):
+                return False
+        elif not mod.point_cache.is_baked:
+            return False
+    return True
 
 class OBJECT_OT_ProcessAnimMeshes(bpy.types.Operator):
     """Store combined per frame vertex offsets and normals for all
     selected mesh objects into seperate image textures"""
     bl_idname = "object.process_anim_meshes"
     bl_label = "Process Anim Meshes"
-
-    @property
-    def allowed_modifiers(self):
-        return [
-            'ARMATURE', 'CAST','CLOTH','CURVE', 'DISPLACE', 'HOOK',
-            'LAPLACIANDEFORM', 'LATTICE', 'MESH_DEFORM',
-            'SHRINKWRAP', 'SIMPLE_DEFORM', 'SMOOTH',
-            'CORRECTIVE_SMOOTH', 'LAPLACIANSMOOTH',
-            'SURFACE_DEFORM', 'WARP', 'WAVE', 'PARTICLE_SYSTEM', 'EXPLODE'
-        ]
 
     @classmethod
     def poll(cls, context):
@@ -257,17 +268,6 @@ class OBJECT_OT_ProcessAnimMeshes(bpy.types.Operator):
         objects = [ob for ob in context.selected_objects if ob.type == 'MESH']
         vertex_count = sum([len(ob.data.vertices) for ob in objects])
         frame_count = len(frame_range(context.scene))
-        texture_size = vertex_count, frame_count
-        for ob in objects:
-            for mod in ob.modifiers:
-                if mod.type not in self.allowed_modifiers:
-                    self.report(
-                        {'ERROR'},
-                        f"Objects with {mod.type.title()} modifiers are not allowed!"
-                    )
-                    return {'CANCELLED'}
-
-
         if vertex_count > 8192:
             self.report(
                 {'WARNING'},
@@ -280,30 +280,67 @@ class OBJECT_OT_ProcessAnimMeshes(bpy.types.Operator):
                 f"Frame count of {frame_count :,}, execedes limit of 8,192! consider using frame step"
             )
             return {'CANCELLED'}
-        if mod.type == 'CLOTH' and not is_simulation_baked(ob, 'CLOTH'):
-            self.report(
-                {'ERROR'},
-                f"Cloth simulation for object {ob.name} is not baked!"
-            )
-            return {'CANCELLED'}
-        if mod.type == 'PARTICLE_SYSTEM' and not is_simulation_baked(ob, 'PARTICLE_SYSTEM'):
-            self.report(
-                {'ERROR'},
-                f"Particle system for object {ob.name} is not baked!"
-            )
-            return {'CANCELLED'}
+        for ob in objects:
+            for mod in ob.modifiers:
+                if mod.type == 'CLOTH' and not is_simulation_baked(ob, 'CLOTH'):
+                    self.report(
+                        {'ERROR'},
+                        f"Cloth simulation for object {ob.name} is not baked!"
+                    )
+                    return {'CANCELLED'}
+                if mod.type == 'PARTICLE_SYSTEM' and not is_simulation_baked(ob, 'PARTICLE_SYSTEM'):
+                    self.report(
+                        {'ERROR'},
+                        f"Particle system for object {ob.name} is not baked!"
+                    )
+                    return {'CANCELLED'}
 
         meshes = get_per_frame_mesh_data(context, data, objects)
         export_mesh_data = meshes[0].copy()
+        frame_counts = [len(me.vertices) for me in meshes]
+        max_count = max(frame_counts)
         self.report(
             {'WARNING'},
             f"Original vertices: {len(meshes[0].vertices)}, Frames: {len(frame_range(context.scene))}"
         )
-        texture_size = len(meshes[0].vertices), len(frame_range(context.scene))
+        if len(set(frame_counts)) > 1:
+            self.report(
+                {'WARNING'},
+                f"Vertex count varies across frames {frame_counts}: rows padded to {max_count}, motion may pop"
+            )
+        texture_size = max_count, len(frame_range(context.scene))
         create_export_mesh_object(context, data, export_mesh_data, texture_size)
         offsets, normals = get_vertex_data(context, data, meshes)
         bake_vertex_data(context, self, data, offsets, normals, texture_size)
 
+        return {'FINISHED'}
+
+
+class OBJECT_OT_PrepareExplodeMesh(bpy.types.Operator):
+    """Split all faces of selected meshes so EXPLODE keeps constant topology.
+
+    Marks every edge sharp and applies a sharp-only Edge Split: each face
+    becomes independent. Run once BEFORE adding particles / baking.
+    Idempotent: re-running on an already split mesh changes nothing.
+    """
+    bl_idname = "object.prepare_explode_mesh"
+    bl_label = "Prepare Explode Mesh"
+
+    @classmethod
+    def poll(cls, context):
+        ob = context.active_object
+        return ob and ob.type == 'MESH' and ob.mode == 'OBJECT'
+
+    def execute(self, context):
+        for ob in [o for o in context.selected_objects if o.type == 'MESH']:
+            for e in ob.data.edges:
+                e.use_edge_sharp = True
+            mod = ob.modifiers.new('VAT_PreSplit', 'EDGE_SPLIT')
+            mod.use_edge_angle = False
+            mod.use_edge_sharp = True
+            context.view_layer.objects.active = ob
+            bpy.ops.object.modifier_apply(modifier=mod.name)
+            self.report({'INFO'}, f"{ob.name}: {len(ob.data.vertices)} verts")
         return {'FINISHED'}
 
 
@@ -352,6 +389,8 @@ class VIEW3D_PT_VertexAnimation(bpy.types.Panel):
             col.label(text=f"Num Wraps: {num_wraps}")
         row = layout.row()
         row.operator("object.process_anim_meshes")
+        row = layout.row()
+        row.operator("object.prepare_explode_mesh")
 
 
 class VATSettings(bpy.types.PropertyGroup):
@@ -399,6 +438,7 @@ class VATSettings(bpy.types.PropertyGroup):
 def register():
     bpy.utils.register_class(VATSettings)
     bpy.utils.register_class(OBJECT_OT_ProcessAnimMeshes)
+    bpy.utils.register_class(OBJECT_OT_PrepareExplodeMesh)
     bpy.utils.register_class(VIEW3D_PT_VertexAnimation)
     bpy.types.Scene.vat_settings = bpy.props.PointerProperty(type=VATSettings)
 
@@ -406,6 +446,7 @@ def register():
 def unregister():
     del bpy.types.Scene.vat_settings
     bpy.utils.unregister_class(VIEW3D_PT_VertexAnimation)
+    bpy.utils.unregister_class(OBJECT_OT_PrepareExplodeMesh)
     bpy.utils.unregister_class(OBJECT_OT_ProcessAnimMeshes)
     bpy.utils.unregister_class(VATSettings)
 
