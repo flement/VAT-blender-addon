@@ -34,6 +34,7 @@ const params = {
   minOffset: 0,
   maxOffset: 1,
   fps: 24,
+  texFilter: 'nearest',
   playing: true,
   reverse: false,
   time: 0,
@@ -94,7 +95,7 @@ async function loadTexture(url, { flipY }) {
   const texture = await loader.loadAsync(url)
   texture.flipY = flipY
   texture.colorSpace = NoColorSpace
-  texture.minFilter = texture.magFilter = NearestFilter
+  texture.minFilter = texture.magFilter = params.texFilter === "linear" ? LinearFilter : NearestFilter
   texture.needsUpdate = true
   return texture
 }
@@ -129,7 +130,7 @@ async function reloadVat({ frameCamera }) {
     const texW = positions.image.width
     const texH = positions.image.height
     params.texHeight = texH
-    vat = createVatMaterial({ positionTexture: positions, normalTexture: normals, params })
+vat = createVatMaterial({ positionTexture: positions, normalTexture: normals, params })
     nextMesh.material = vat.material
     vatMesh = nextMesh
     vatRoot = gltf.scene
@@ -259,6 +260,10 @@ for (const input of panelInputs) {
       // WRAP with padding rounds to the nearest block count (best effort).
       params.numWraps = params.wrapMode === 'none' ? 1 : Math.max(1, Math.round(params.texHeight / params.frames))
       refreshPreview()
+    }
+    if (key === "texFilter" && vat) {
+      const f = params.texFilter === "linear" ? LinearFilter : NearestFilter
+      for (const t of [vat.uniforms.posTexture.value, vat.uniforms.normalTexture.value]) { t.minFilter = t.magFilter = f; t.needsUpdate = true }
     }
     if (vat) syncVatUniforms(vat.uniforms, params)
     syncPanelInputs()
