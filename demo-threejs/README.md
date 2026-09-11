@@ -1,6 +1,20 @@
 # VAT lab (three 0.186.0 + vite 8.3.0, no UI dependency)
 
-Viewer for `wrap NONE` plugin exports. Drop a bake in, tune the params live.
+Viewer for NONE / WRAP / WRAP_CROP plugin exports. Ships with bundled examples
+(`public/examples.json` + `public/examples/<id>/<mode>/`, baked OFFSETS,
+flip_Y ON, 30 frames) switchable from the EXAMPLE + WRAP selects (`?ex=<id>`,
+`?wrap=<mode>` and `?frame=N` deep-link example / mode / paused frame).
+Section 04 shows a realtime preview of both textures in bake-row order with
+the sampled rows as playhead lines (`frame · mem rows […]`). Drop a bake in,
+tune the params live.
+
+Re-bake after scene changes: open `blender-tests/vat_test.blend` in Blender
+4.2+ with the VAT addon enabled and run `blender-tests/export_examples.py`
+(every `VAT_*` mesh → `<id>.glb` + `positions.exr` + `normals.png`).
+`positions.exr` is written half-float planar-ABGR by the script itself:
+Blender's `image.save()` EXR output misparses in third-party readers
+(three.js, OIIO) while Blender roundtrips it fine, so the script serializes
+from image pixels directly (verified texel-exact vs `image.pixels`).
 
 ```sh
 cd demo-threejs

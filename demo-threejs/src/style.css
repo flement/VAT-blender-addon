@@ -79,6 +79,29 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
+#texpreview {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  width: 264px;
+  background: white;
+  border: 1px solid black;
+  padding: 8px;
+  z-index: 10;
+}
+
+#texpreview canvas {
+  width: 100%;
+  display: block;
+  border: 1px solid black;
+  image-rendering: pixelated;
+}
+
+#preview-status {
+  margin: 8px 0 0;
+  white-space: pre-wrap;
+}
+
 .btn-row {
   display: flex;
   gap: 8px;

@@ -1,11 +1,13 @@
 import {
+  AmbientLight,
   Box3,
   DirectionalLight,
   DirectionalLightHelper,
-  GridHelper, LinearFilter,
+  GridHelper, HemisphereLight, LinearFilter,
   NearestFilter,
   NoColorSpace,
   PerspectiveCamera,
+  PMREMGenerator,
   Scene,
   TextureLoader,
   Timer,
@@ -15,19 +17,19 @@ import {
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { EXRLoader } from 'three/addons/loaders/EXRLoader.js'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js'
 import { createVatMaterial, syncVatUniforms } from './vat-material.js'
+import { buildPreview } from './vat-preview.js'
 
-const DEFAULT_SOURCES = {
-  mesh: '/vat_test.glb',
-  positions: '/positions.exr',
-  normals: '/normals.png',
-}
-
-// Live-tweakable bake parameters (wrap NONE only).
+// Bake recipe (fixed, matches public/examples manifest): OFFSETS, flip_y ON,
+// normalize OFF. EXR is uploaded unflipped (EXRLoader default),
+// normals PNG keeps the TextureLoader flipY default; the shader accounts both.
 const params = {
   frames: 30,
+  numWraps: 1,
+  texHeight: 30,
+  wrapMode: 'wrap_crop',
   positionMode: 'offsets',
-  flipY: true,
   normalize: false,
   minOffset: 0,
   maxOffset: 1,
@@ -37,12 +39,17 @@ const params = {
   time: 0,
 }
 
-const sources = { ...DEFAULT_SOURCES }
+const sources = { mesh: '', positions: '', normals: '' }
+let EXAMPLES = []
+let preview = null
+let lastPosTex = null
+let lastNrmTex = null
 const container = document.querySelector('#app')
 const overlay = document.querySelector('#overlay')
 const overlayText = document.querySelector('#overlay-text')
 const statusBox = document.querySelector('#status')
 const frameReadout = document.querySelector('#frame-readout')
+const exampleSelect = document.querySelector('#example-select')
 
 const renderer = new WebGLRenderer({ antialias: true })
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2))
@@ -55,7 +62,8 @@ scene.add(new GridHelper(10, 20))
 const sun = new DirectionalLight(0xffffff, 2.5)
 sun.position.set(4, 6, 3)
 scene.add(sun)
-scene.add(sun.target)
+const ambient = new AmbientLight(0xffffff, .5)
+scene.add(ambient)
 const camera = new PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 100)
 camera.position.set(4, 3, 6)
 const controls = new OrbitControls(camera, renderer.domElement)
@@ -81,17 +89,14 @@ function showError(message) {
   overlayText.classList.add('error')
 }
 
-function prepareTexture(texture) {
-  texture.flipY = params.flipY
+async function loadTexture(url, { flipY }) {
+  const loader = url.toLowerCase().endsWith('.exr') ? new EXRLoader() : new TextureLoader()
+  const texture = await loader.loadAsync(url)
+  texture.flipY = flipY
   texture.colorSpace = NoColorSpace
   texture.minFilter = texture.magFilter = NearestFilter
   texture.needsUpdate = true
   return texture
-}
-
-async function loadTexture(url) {
-  const loader = url.toLowerCase().endsWith('.exr') ? new EXRLoader() : new TextureLoader()
-  return prepareTexture(await loader.loadAsync(url))
 }
 
 function frameDuration() {
@@ -105,8 +110,8 @@ async function reloadVat({ frameCamera }) {
   try {
     const [gltf, positions, normals] = await Promise.all([
       new GLTFLoader().loadAsync(sources.mesh),
-      loadTexture(sources.positions),
-      loadTexture(sources.normals),
+      loadTexture(sources.positions, { flipY: false }),
+      loadTexture(sources.normals, { flipY: true }),
     ])
 
     const nextMesh = gltf.scene.children.find((child) => child.isMesh)
@@ -121,21 +126,23 @@ async function reloadVat({ frameCamera }) {
       vat.uniforms.normalTexture.value.dispose()
       vat.material.dispose()
     }
+    const texW = positions.image.width
+    const texH = positions.image.height
+    params.texHeight = texH
     vat = createVatMaterial({ positionTexture: positions, normalTexture: normals, params })
     nextMesh.material = vat.material
     vatMesh = nextMesh
     vatRoot = gltf.scene
     scene.add(vatRoot)
 
-    // Wrap NONE: texture height = frame count.
-    const texW = positions.image.width
-    const texH = positions.image.height
     const verts = nextMesh.geometry.getAttribute('position').count
-    params.frames = texH
     params.time = 0
     syncVatUniforms(vat.uniforms, params)
     syncPanelInputs()
-    setStatus([`positions ${texW}x${texH} | verts ${verts} | frames ${texH}`])
+    setStatus([`${params.wrapMode} ${texW}x${texH} | verts ${verts} | frames ${params.frames} x ${params.numWraps} wraps`])
+    lastPosTex = positions
+    lastNrmTex = normals
+    refreshPreview()
 
     if (frameCamera) frameMeshCamera()
     overlay.hidden = true
@@ -144,6 +151,65 @@ async function reloadVat({ frameCamera }) {
     throw error
   }
 }
+
+function refreshPreview() {
+  if (!lastPosTex || !lastNrmTex) return
+  preview = buildPreview({
+      posTexture: lastPosTex,
+      normalTexture: lastNrmTex,
+      frames: params.frames,
+      numWraps: params.numWraps,
+      posCanvas: document.querySelector('#preview-pos'),
+      nrmCanvas: document.querySelector('#preview-nrm'),
+      posDims: document.querySelector('#preview-pos-dims'),
+      nrmDims: document.querySelector('#preview-nrm-dims'),
+      statusEl: document.querySelector('#preview-status'),
+    })
+}
+
+function applyExample(ex) {
+  sources.mesh = ex.mesh
+  sources.positions = ex.positions
+  sources.normals = ex.normals
+  Object.assign(params, {
+    frames: ex.frames,
+    numWraps: ex.numWraps,
+    wrapMode: 'wrap_crop',
+    positionMode: ex.positionMode,
+    normalize: ex.normalize,
+    minOffset: ex.minOffset,
+    maxOffset: ex.maxOffset,
+    fps: ex.fps ?? params.fps,
+    time: 0,
+  })
+  for (const [slot, url] of Object.entries(sources)) {
+    document.querySelector(`[data-slot-label="${slot}"]`).textContent = url.split('/').pop()
+  }
+}
+
+async function bootExamples() {
+  const res = await fetch('/examples.json')
+  if (!res.ok) throw new Error('no examples manifest')
+  EXAMPLES = (await res.json()).examples
+  exampleSelect.innerHTML = ''
+  for (const ex of EXAMPLES) {
+    const opt = document.createElement('option')
+    opt.value = ex.id
+    opt.textContent = ex.label
+    exampleSelect.appendChild(opt)
+  }
+  const wanted = new URLSearchParams(location.search).get('ex')
+  const chosen = EXAMPLES.find((e) => e.id === wanted) ?? EXAMPLES[0]
+  applyExample(chosen)
+  exampleSelect.value = chosen.id
+}
+
+exampleSelect.addEventListener('change', () => {
+  const ex = EXAMPLES.find((e) => e.id === exampleSelect.value)
+  if (!ex) return
+  applyExample(ex)
+  reloadVat({ frameCamera: true }).catch(() => {})
+})
 
 function frameMeshCamera() {
   if (!vatMesh) return
@@ -186,6 +252,13 @@ for (const input of panelInputs) {
     if (key === 'frames' || key === 'fps') {
       const total = frameDuration()
       params.time = Math.min(params.time, total)
+    }
+    if (key === 'wrapMode' || key === 'frames') {
+      // Mirror of the Blender bake tab: re-interprets the loaded textures.
+      // NONE has a single block; WRAP_CROP derives exactly (Ht = F*K);
+      // WRAP with padding rounds to the nearest block count (best effort).
+      params.numWraps = params.wrapMode === 'none' ? 1 : Math.max(1, Math.round(params.texHeight / params.frames))
+      refreshPreview()
     }
     if (vat) syncVatUniforms(vat.uniforms, params)
     syncPanelInputs()
@@ -236,9 +309,23 @@ renderer.setAnimationLoop(timestamp => {
   tickPlayback(timer.getDelta())
   const timeInput = panelInputs.find((input) => input.dataset.param === 'time')
   if (document.activeElement !== timeInput) timeInput.value = params.time
-  frameReadout.textContent = vat ? String(Math.floor(vat.uniforms.frame.value) % params.frames) : '–'
+  const frameIndex = vat ? ((Math.floor(vat.uniforms.frame.value) % params.frames) + params.frames) % params.frames : 0
+  frameReadout.textContent = vat ? String(frameIndex) : '–'
+  if (preview && vat) preview.update(frameIndex)
   controls.update()
   renderer.render(scene, camera)
 })
 
-reloadVat({ frameCamera: true }).catch(() => {})
+bootExamples()
+  .catch(() => {})
+  .finally(() => reloadVat({ frameCamera: true }).catch(() => {}))
+  .finally(() => {
+    // ?frame=N deep-links a paused frame (testing / sharing).
+    const f = new URLSearchParams(location.search).get('frame')
+    if (f !== null && vat) {
+      params.time = Math.max(0, Number(f) || 0) / params.fps
+      params.playing = false
+      vat.uniforms.frame.value = params.time * params.fps
+      syncPanelInputs()
+    }
+  })

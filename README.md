@@ -12,9 +12,9 @@ In the generated texture, the vertical axis (top to bottom) corresponds to anima
 In a real-time engine (such as Three.js), the static mesh is imported along with its animation textures. A shader reads these textures frame by frame to move the vertices, thus reproducing the original animation without the need for an armature or complex calculations on the engine side. This method allows exporting complex animations, including those from physics simulations or modifiers, while optimizing rendering performance.
 
 ## Installation
-1. Download `VAT.py`.
-2. In Blender, go to **Edit > Preferences > Add-ons**.
-3. Click **Install from Disk...** and select the `VAT.py` file.
+1. Download this repo (or zip containing the `VAT` folder, with `VAT/__init__.py` + `VAT/blender_manifest.toml`, version 1.0.1).
+2. In Blender 4.2+, go to **Edit > Preferences > Add-ons**.
+3. Click **Install from Disk...** and select the `VAT` folder (or zip).
 4. Enable the addon in the list.
 
 ## Features
@@ -77,6 +77,15 @@ For `PARTICLE_SYSTEM`, it is recommended to set both the Emission Frame Start an
 | `positions`   | Vertex position animation texture.                                      | If `Normalize` is **false**: export as **OpenEXR**, `Color` `RGB`, `Color Depth` `Half` or `Full`, `Non-Color` | ![image](https://github.com/user-attachments/assets/5a60ca57-4aa7-43bd-addd-6b18c0931432) |
 |               |                                                                         | If `Normalize` is **true**: export as **PNG**, same settings as above                                          | ![image](https://github.com/user-attachments/assets/d2aa6067-f177-4387-acf0-9af945ceaf3f) |
 | `normals`     | Vertex normal animation texture.                                        | **PNG** or other supported formats                                                                             | ![image](https://github.com/user-attachments/assets/d2aa6067-f177-4387-acf0-9af945ceaf3f) |
+
+## Test scene (`blender-tests/`)
+- `blender-tests/vat_test.blend`: timeline 1–31 (step 1). Note `frame_range()` excludes the end frame → 30 baked frames.
+- Covers `WAVE` (OFFSETS / wrap NONE), `SIMPLE_DEFORM` twist (ABSOLUTES + normalize + WRAP_CROP, step 2), `DISPLACE`, `ARMATURE` + `SMOOTH`.
+- Recipe: open in Blender 4.2+ with VAT enabled, select ONE test object (not `export_mesh`), set options in the VAT tab, run `Process Anim Meshes`. See `blender-tests/README.md`.
+
+## Three.js viewer (`demo-threejs/`)
+- Vite + three 0.186.0 viewer for `NONE` / `WRAP` / `WRAP_CROP` exports. `src/vat-material.js` holds the VAT sampling (`MeshStandardMaterial` + `onBeforeCompile`, normals decoded `*2-1` + `.xzy` swizzle, `vatNormalUv` mirror kept).
+- Run: `cd demo-threejs && bun install && bun run dev` (http://localhost:5173). Ships 4 bundled `VAT_*` examples with an EXAMPLE select; drop in Mesh `.glb` + Positions `.exr`/`.png` + Normals `.png`, tune bake params mirroring the Blender tab. See `demo-threejs/README.md`.
 
 ## Usage for threejs
 Blender uses Z as the up axis, while in Three.js the up axis is Y. Therefore, when sampling the position texture in GLSL, you should use `texturePos.xzy` to correctly map the axes.

@@ -12,6 +12,7 @@
     <aside id="panel">
            <section>
         <h2>01 / ASSETS</h2>
+        <label class="row"><span>EXAMPLE</span><select id="example-select"></select></label>
         <div class="slot" data-slot="mesh" role="button" tabindex="0">
           <span class="slot-name">01 — MESH [.GLB]</span>
           <span class="slot-file" data-slot-label="mesh">vat_test.glb</span>
@@ -31,14 +32,20 @@
       </section>
 
       <section>
-        <h2>02 / BAKE — WRAP:NONE</h2>
+        <h2>02 / BAKE</h2>
+        <label class="row"><span>WRAP</span>
+          <select data-param="wrapMode">
+            <option value="none">none</option>
+            <option value="wrap">wrap</option>
+            <option value="wrap_crop" selected>wrap_crop</option>
+          </select>
+        </label>
         <label class="row"><span>FRAMES</span><input type="number" data-param="frames" min="1" max="1024" step="1" /></label>
         <label class="row"><span>MODE</span>
           <select data-param="positionMode">
             <option selected>offsets</option><option>absolutes</option>
           </select>
         </label>
-        <label class="row check"><span>FLIP_Y</span><input type="checkbox" data-param="flipY" /></label>
         <label class="row check"><span>NORMALIZE&gt;PNG</span><input type="checkbox" data-param="normalize" /></label>
         <label class="row"><span>MIN_OFF</span><input type="number" data-param="minOffset" step="any" /></label>
         <label class="row"><span>MAX_OFF</span><input type="number" data-param="maxOffset" step="any" /></label>
@@ -57,6 +64,13 @@
         </div>
       </section>
     </aside>
+    <div id="texpreview">
+      <div class="prev-label">POSITIONS <span id="preview-pos-dims"></span></div>
+      <canvas id="preview-pos"></canvas>
+      <div class="prev-label">NORMALS <span id="preview-nrm-dims"></span></div>
+      <canvas id="preview-nrm"></canvas>
+      <pre id="preview-status">–</pre>
+    </div>
     <div id="overlay" class="overlay">
       <div id="overlay-text" class="overlay-card">Loading VAT assets…</div>
     </div>

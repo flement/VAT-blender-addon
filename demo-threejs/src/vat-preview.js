@@ -1,0 +1,116 @@
+import { DataUtils } from "three";
+
+// Realtime 2D preview of the VAT textures, drawn in bake-memory row order
+// (top = mem row 0). The playhead marks, per vertex-block b, the mem row the
+// shader samples at frame f: m = (K-1-b) * F + f  (F = frames, K = wraps).
+export function buildPreview({
+  posTexture,
+  normalTexture,
+  frames,
+  numWraps,
+  posCanvas,
+  nrmCanvas,
+  posDims,
+  nrmDims,
+  statusEl,
+}) {
+  const F = frames;
+  const K = numWraps;
+  const W = posTexture.image.width;
+  const H = posTexture.image.height;
+  let lastFrame = -1;
+
+  // --- Positions offscreen: EXR half data is GL-flipped by the loader,
+  // data row d = mem row H-1-d. Values normalized by global RGB min/max.
+  const data = posTexture.image.data;
+  let posOff = null;
+  let min = 0;
+  let max = 1;
+  if (data && data.length === W * H * 4) {
+    min = Infinity;
+    max = -Infinity;
+    const n = data.length / 4;
+    for (let i = 0; i < n; i++) {
+      for (let c = 0; c < 3; c++) {
+        const v = DataUtils.fromHalfFloat(data[i * 4 + c]);
+        if (v < min) min = v;
+        if (v > max) max = v;
+      }
+    }
+    const span = max - min || 1;
+    posOff = document.createElement("canvas");
+    posOff.width = W;
+    posOff.height = H;
+    const pctx = posOff.getContext("2d");
+    const pimg = pctx.createImageData(W, H);
+    for (let y = 0; y < H; y++) {
+      const drow = H - 1 - y;
+      for (let x = 0; x < W; x++) {
+        const si = (drow * W + x) * 4;
+        const di = (y * W + x) * 4;
+        for (let c = 0; c < 3; c++) {
+          pimg.data[di + c] = Math.round(
+            ((DataUtils.fromHalfFloat(data[si + c]) - min) / span) * 255,
+          );
+        }
+        pimg.data[di + 3] = 255;
+      }
+    }
+    pctx.putImageData(pimg, 0, 0);
+  }
+
+  // --- Normals offscreen: PNG file rows are top-down = mem bottom-up,
+  // so flip vertically on draw to land in mem order like positions.
+  const nimg = normalTexture.image;
+  const nW = nimg.width || W;
+  const nH = nimg.height || H;
+  const nrmOff = document.createElement("canvas");
+  nrmOff.width = nW;
+  nrmOff.height = nH;
+  const nctx = nrmOff.getContext("2d");
+  nctx.save();
+  nctx.translate(0, nH);
+  nctx.scale(1, -1);
+  nctx.drawImage(nimg, 0, 0, nW, nH);
+  nctx.restore();
+
+  posCanvas.width = W;
+  posCanvas.height = H;
+  nrmCanvas.width = nW;
+  nrmCanvas.height = nH;
+  posDims.textContent = `${W}x${H}`;
+  nrmDims.textContent = `${nW}x${nH}`;
+
+  function paint(canvas, off, rows) {
+    const ctx = canvas.getContext("2d");
+    ctx.imageSmoothingEnabled = false;
+    if (off) ctx.drawImage(off, 0, 0);
+    else {
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (const m of rows) {
+      ctx.moveTo(0, m + 0.5);
+      ctx.lineTo(canvas.width, m + 0.5);
+    }
+    ctx.stroke();
+  }
+
+  function update(f) {
+    const fi = ((Math.floor(f) % F) + F) % F;
+    if (fi === lastFrame) return;
+    lastFrame = fi;
+    const rows = [];
+    for (let b = 0; b < K; b++) rows.push((K - 1 - b) * F + fi);
+    paint(posCanvas, posOff, rows);
+    paint(nrmCanvas, nrmOff, rows);
+    statusEl.textContent = `frame ${fi} · mem rows [${rows.join(", ")}] · offsets [${min.toFixed(3)}, ${max.toFixed(3)}]`;
+  }
+
+  update(0);
+  return { update };
+}

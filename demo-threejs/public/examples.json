@@ -1,0 +1,64 @@
+{
+  "examples": [
+    {
+      "id": "armature",
+      "label": "VAT_Armature \u2014 24v",
+      "mesh": "/examples/armature/armature.glb",
+      "positions": "/examples/armature/positions.exr",
+      "normals": "/examples/armature/normals.png",
+      "frames": 30,
+      "numWraps": 1,
+      "positionMode": "offsets",
+      "flipY": true,
+      "normalize": false,
+      "minOffset": 0,
+      "maxOffset": 1,
+      "fps": 24
+    },
+    {
+      "id": "displace",
+      "label": "VAT_Displace \u2014 114v",
+      "mesh": "/examples/displace/displace.glb",
+      "positions": "/examples/displace/positions.exr",
+      "normals": "/examples/displace/normals.png",
+      "frames": 30,
+      "numWraps": 2,
+      "positionMode": "offsets",
+      "flipY": true,
+      "normalize": false,
+      "minOffset": 0,
+      "maxOffset": 1,
+      "fps": 24
+    },
+    {
+      "id": "twist",
+      "label": "VAT_Twist \u2014 152v",
+      "mesh": "/examples/twist/twist.glb",
+      "positions": "/examples/twist/positions.exr",
+      "normals": "/examples/twist/normals.png",
+      "frames": 30,
+      "numWraps": 3,
+      "positionMode": "offsets",
+      "flipY": true,
+      "normalize": false,
+      "minOffset": 0,
+      "maxOffset": 1,
+      "fps": 24
+    },
+    {
+      "id": "wave",
+      "label": "VAT_Wave \u2014 121v",
+      "mesh": "/examples/wave/wave.glb",
+      "positions": "/examples/wave/positions.exr",
+      "normals": "/examples/wave/normals.png",
+      "frames": 30,
+      "numWraps": 2,
+      "positionMode": "offsets",
+      "flipY": true,
+      "normalize": false,
+      "minOffset": 0,
+      "maxOffset": 1,
+      "fps": 24
+    }
+  ]
+}
