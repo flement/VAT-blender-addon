@@ -2,7 +2,7 @@
   "examples": [
     {
       "id": "armature",
-      "label": "VAT_Armature \u2014 24v",
+      "label": "Armature \u2014 24v",
       "mesh": "/examples/armature/armature.glb",
       "positions": "/examples/armature/positions.exr",
       "normals": "/examples/armature/normals.png",
@@ -17,7 +17,7 @@
     },
     {
       "id": "bevel",
-      "label": "VAT_Bevel \u2014 96v",
+      "label": "Bevel \u2014 96v",
       "mesh": "/examples/bevel/bevel.glb",
       "positions": "/examples/bevel/positions.exr",
       "normals": "/examples/bevel/normals.png",
@@ -32,7 +32,7 @@
     },
     {
       "id": "cast",
-      "label": "VAT_Cast \u2014 8v",
+      "label": "Cast \u2014 8v",
       "mesh": "/examples/cast/cast.glb",
       "positions": "/examples/cast/positions.exr",
       "normals": "/examples/cast/normals.png",
@@ -47,7 +47,7 @@
     },
     {
       "id": "cloth",
-      "label": "VAT_Cloth \u2014 100v",
+      "label": "Cloth \u2014 100v",
       "mesh": "/examples/cloth/cloth.glb",
       "positions": "/examples/cloth/positions.exr",
       "normals": "/examples/cloth/normals.png",
@@ -62,7 +62,7 @@
     },
     {
       "id": "correctivesmooth",
-      "label": "VAT_CorrectiveSmooth \u2014 64v",
+      "label": "CorrectiveSmooth \u2014 64v",
       "mesh": "/examples/correctivesmooth/correctivesmooth.glb",
       "positions": "/examples/correctivesmooth/positions.exr",
       "normals": "/examples/correctivesmooth/normals.png",
@@ -77,7 +77,7 @@
     },
     {
       "id": "curve",
-      "label": "VAT_Curve \u2014 64v",
+      "label": "Curve \u2014 64v",
       "mesh": "/examples/curve/curve.glb",
       "positions": "/examples/curve/positions.exr",
       "normals": "/examples/curve/normals.png",
@@ -92,7 +92,7 @@
     },
     {
       "id": "displace",
-      "label": "VAT_Displace \u2014 64v",
+      "label": "Displace \u2014 64v",
       "mesh": "/examples/displace/displace.glb",
       "positions": "/examples/displace/positions.exr",
       "normals": "/examples/displace/normals.png",
@@ -107,7 +107,7 @@
     },
     {
       "id": "explode",
-      "label": "VAT_Explode \u2014 144v",
+      "label": "Explode \u2014 144v",
       "mesh": "/examples/explode/explode.glb",
       "positions": "/examples/explode/positions.exr",
       "normals": "/examples/explode/normals.png",
@@ -122,7 +122,7 @@
     },
     {
       "id": "hook",
-      "label": "VAT_Hook \u2014 64v",
+      "label": "Hook \u2014 64v",
       "mesh": "/examples/hook/hook.glb",
       "positions": "/examples/hook/positions.exr",
       "normals": "/examples/hook/normals.png",
@@ -137,7 +137,7 @@
     },
     {
       "id": "laplaciandeform",
-      "label": "VAT_LaplacianDeform \u2014 36v",
+      "label": "LaplacianDeform \u2014 36v",
       "mesh": "/examples/laplaciandeform/laplaciandeform.glb",
       "positions": "/examples/laplaciandeform/positions.exr",
       "normals": "/examples/laplaciandeform/normals.png",
@@ -152,7 +152,7 @@
     },
     {
       "id": "laplaciansmooth",
-      "label": "VAT_LaplacianSmooth \u2014 64v",
+      "label": "LaplacianSmooth \u2014 64v",
       "mesh": "/examples/laplaciansmooth/laplaciansmooth.glb",
       "positions": "/examples/laplaciansmooth/positions.exr",
       "normals": "/examples/laplaciansmooth/normals.png",
@@ -167,7 +167,7 @@
     },
     {
       "id": "lattice",
-      "label": "VAT_Lattice \u2014 64v",
+      "label": "Lattice \u2014 64v",
       "mesh": "/examples/lattice/lattice.glb",
       "positions": "/examples/lattice/positions.exr",
       "normals": "/examples/lattice/normals.png",
@@ -182,7 +182,7 @@
     },
     {
       "id": "meshdeform",
-      "label": "VAT_MeshDeform \u2014 64v",
+      "label": "MeshDeform \u2014 64v",
       "mesh": "/examples/meshdeform/meshdeform.glb",
       "positions": "/examples/meshdeform/positions.exr",
       "normals": "/examples/meshdeform/normals.png",
@@ -197,7 +197,7 @@
     },
     {
       "id": "nodes",
-      "label": "VAT_Nodes \u2014 36v",
+      "label": "Nodes \u2014 36v",
       "mesh": "/examples/nodes/nodes.glb",
       "positions": "/examples/nodes/positions.exr",
       "normals": "/examples/nodes/normals.png",
@@ -212,7 +212,7 @@
     },
     {
       "id": "ocean",
-      "label": "VAT_Ocean \u2014 2500v",
+      "label": "Ocean \u2014 2500v",
       "mesh": "/examples/ocean/ocean.glb",
       "positions": "/examples/ocean/positions.exr",
       "normals": "/examples/ocean/normals.png",
@@ -227,7 +227,7 @@
     },
     {
       "id": "shrinkwrap",
-      "label": "VAT_Shrinkwrap \u2014 64v",
+      "label": "Shrinkwrap \u2014 64v",
       "mesh": "/examples/shrinkwrap/shrinkwrap.glb",
       "positions": "/examples/shrinkwrap/positions.exr",
       "normals": "/examples/shrinkwrap/normals.png",
@@ -242,7 +242,7 @@
     },
     {
       "id": "smooth",
-      "label": "VAT_Smooth \u2014 64v",
+      "label": "Smooth \u2014 64v",
       "mesh": "/examples/smooth/smooth.glb",
       "positions": "/examples/smooth/positions.exr",
       "normals": "/examples/smooth/normals.png",
@@ -257,7 +257,7 @@
     },
     {
       "id": "softbody",
-      "label": "VAT_Softbody \u2014 36v",
+      "label": "Softbody \u2014 36v",
       "mesh": "/examples/softbody/softbody.glb",
       "positions": "/examples/softbody/positions.exr",
       "normals": "/examples/softbody/normals.png",
@@ -272,7 +272,7 @@
     },
     {
       "id": "solidify",
-      "label": "VAT_Solidify \u2014 72v",
+      "label": "Solidify \u2014 72v",
       "mesh": "/examples/solidify/solidify.glb",
       "positions": "/examples/solidify/positions.exr",
       "normals": "/examples/solidify/normals.png",
@@ -287,7 +287,7 @@
     },
     {
       "id": "subsurf",
-      "label": "VAT_Subsurf \u2014 441v",
+      "label": "Subsurf \u2014 441v",
       "mesh": "/examples/subsurf/subsurf.glb",
       "positions": "/examples/subsurf/positions.exr",
       "normals": "/examples/subsurf/normals.png",
@@ -302,7 +302,7 @@
     },
     {
       "id": "surfacedeform",
-      "label": "VAT_SurfaceDeform \u2014 64v",
+      "label": "SurfaceDeform \u2014 64v",
       "mesh": "/examples/surfacedeform/surfacedeform.glb",
       "positions": "/examples/surfacedeform/positions.exr",
       "normals": "/examples/surfacedeform/normals.png",
@@ -317,7 +317,7 @@
     },
     {
       "id": "twist",
-      "label": "VAT_Twist \u2014 152v",
+      "label": "Twist \u2014 152v",
       "mesh": "/examples/twist/twist.glb",
       "positions": "/examples/twist/positions.exr",
       "normals": "/examples/twist/normals.png",
@@ -332,7 +332,7 @@
     },
     {
       "id": "warp",
-      "label": "VAT_Warp \u2014 64v",
+      "label": "Warp \u2014 64v",
       "mesh": "/examples/warp/warp.glb",
       "positions": "/examples/warp/positions.exr",
       "normals": "/examples/warp/normals.png",
@@ -347,7 +347,7 @@
     },
     {
       "id": "wave",
-      "label": "VAT_Wave \u2014 64v",
+      "label": "Wave \u2014 64v",
       "mesh": "/examples/wave/wave.glb",
       "positions": "/examples/wave/positions.exr",
       "normals": "/examples/wave/normals.png",
@@ -362,7 +362,7 @@
     },
     {
       "id": "wireframe",
-      "label": "VAT_Wireframe \u2014 172v",
+      "label": "Wireframe \u2014 172v",
       "mesh": "/examples/wireframe/wireframe.glb",
       "positions": "/examples/wireframe/positions.exr",
       "normals": "/examples/wireframe/normals.png",
