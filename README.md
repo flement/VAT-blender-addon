@@ -40,18 +40,20 @@ without effect:
 
 | | | |
 |---|---|---|
-| ARMATURE | ARRAY | BEVEL |
-| BOOLEAN | BUILD | CAST |
-| CLOTH | CURVE | DECIMATE |
-| DISPLACE | EXPLODE | HOOK |
-| LAPLACIANDEFORM | LAPLACIANSMOOTH | LATTICE |
-| MASK | MESH_DEFORM | MIRROR |
-| NODES | OCEAN | PARTICLE_SYSTEM |
-| REMESH | SCREW | SHRINKWRAP |
-| SIMPLE_DEFORM | SMOOTH | CORRECTIVE_SMOOTH |
-| SOFT_BODY | SOLIDIFY | SUBSURF |
-| SURFACE_DEFORM | WARP | WAVE |
-| WIREFRAME | | |
+| [ARMATURE](https://vat.residenceprincipale.net/?ex=armature) | ARRAY | [BEVEL](https://vat.residenceprincipale.net/?ex=bevel) |
+| | BUILD | [CAST](https://vat.residenceprincipale.net/?ex=cast) |
+| [CLOTH](https://vat.residenceprincipale.net/?ex=cloth) | [CURVE](https://vat.residenceprincipale.net/?ex=curve) | DECIMATE |
+| [DISPLACE](https://vat.residenceprincipale.net/?ex=displace) | [EXPLODE](https://vat.residenceprincipale.net/?ex=explode) | [HOOK](https://vat.residenceprincipale.net/?ex=hook) |
+| [LAPLACIANDEFORM](https://vat.residenceprincipale.net/?ex=laplaciandeform) | [LAPLACIANSMOOTH](https://vat.residenceprincipale.net/?ex=laplaciansmooth) | [LATTICE](https://vat.residenceprincipale.net/?ex=lattice) |
+| MASK | [MESH_DEFORM](https://vat.residenceprincipale.net/?ex=meshdeform) | MIRROR |
+| [NODES](https://vat.residenceprincipale.net/?ex=nodes) | [OCEAN](https://vat.residenceprincipale.net/?ex=ocean) | PARTICLE_SYSTEM |
+| REMESH | SCREW | [SHRINKWRAP](https://vat.residenceprincipale.net/?ex=shrinkwrap) |
+| [SIMPLE_DEFORM](https://vat.residenceprincipale.net/?ex=twist) | [SMOOTH](https://vat.residenceprincipale.net/?ex=smooth) | [CORRECTIVE_SMOOTH](https://vat.residenceprincipale.net/?ex=correctivesmooth) |
+| [SOFT_BODY](https://vat.residenceprincipale.net/?ex=softbody) | [SOLIDIFY](https://vat.residenceprincipale.net/?ex=solidify) | [SUBSURF](https://vat.residenceprincipale.net/?ex=subsurf) |
+| [SURFACE_DEFORM](https://vat.residenceprincipale.net/?ex=surfacedeform) | [WARP](https://vat.residenceprincipale.net/?ex=warp) | [WAVE](https://vat.residenceprincipale.net/?ex=wave) |
+| [WIREFRAME](https://vat.residenceprincipale.net/?ex=wireframe) | | |
+
+Names without a link have no bundled example yet (`demo-threejs/public/examples.json`).
 
 Two rules:
 1. Bake simulations first (Cache > Bake All Dynamics) — unbaked `CLOTH` / `PARTICLE_SYSTEM` aborts with an error.
@@ -93,6 +95,7 @@ The shader replays bind-pose faces, so chunks must already be separate:
 ## Three.js viewer (`demo-threejs/`)
 - Vite + three 0.186.0 viewer for `NONE` / `WRAP` / `WRAP_CROP` exports. `src/vat-material.js` holds the VAT sampling (`MeshStandardMaterial` + `onBeforeCompile`, normals decoded `*2-1` + `.xzy` swizzle, `vatNormalUv` mirror kept).
 - Run: `cd demo-threejs && bun install && bun run dev` (http://localhost:5173, live: https://vat.residenceprincipale.net/). Ships 19 bundled `VAT_*` examples (each mesh recentered on origin) with an EXAMPLE select; drop in Mesh `.glb` + Positions `.exr`/`.png` + Normals `.png`, tune bake params mirroring the Blender tab. See `demo-threejs/README.md`.
+- Deep links: `?ex=<id>` (example id from `demo-threejs/public/examples.json`, e.g. `/?ex=twist` for the Simple Deform modifier) + `?frame=N` (paused 0-based frame, e.g. `/?ex=explode&frame=10`).
 
 ## Usage for threejs
 Blender uses Z as the up axis, while in Three.js the up axis is Y. Therefore, when sampling the position texture in GLSL, you should use `texturePos.xzy` to correctly map the axes.

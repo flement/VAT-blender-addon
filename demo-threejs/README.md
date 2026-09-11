@@ -4,11 +4,15 @@
 
 Viewer for NONE / WRAP / WRAP_CROP plugin exports. Ships with bundled examples
 (`public/examples.json` + `public/examples/<id>/<mode>/`, baked OFFSETS,
-flip_Y ON, 30 frames) switchable from the EXAMPLE + WRAP selects (`?ex=<id>`,
-`?wrap=<mode>` and `?frame=N` deep-link example / mode / paused frame).
+flip_Y ON, 30 frames) switchable from the EXAMPLE + WRAP selects.
 Section 04 shows a realtime preview of both textures in bake-row order with
 the sampled rows as playhead lines (`frame · mem rows […]`). Drop a bake in,
 tune the params live.
+
+Deep links (see `public/examples.json` for ids):
+`?ex=<id>` selects the example (unknown id → first example),
+`?frame=N` opens paused on frame N (0-based). Examples:
+`/?ex=twist` (Simple Deform), `/?ex=explode&frame=10`, `/?ex=wave`.
 
 Re-bake after scene changes: open `blender-examples/vat_test.blend` in Blender
 4.2+ with the VAT addon enabled and run `blender-examples/export_examples.py`
