@@ -35,6 +35,8 @@ bl_info = {
 import bpy
 import bmesh
 import math
+import os
+import struct
 
 def get_per_frame_mesh_data(context, data, objects):
     """Return a list of combined mesh data per frame"""
@@ -246,6 +248,43 @@ def bake_vertex_data(context, self, data, offsets, normals, size):
     else:
         offset_texture.pixels = offsets
         normal_texture.pixels = normals
+def write_exr_half(path, w, h, pixels, nch):
+    """Write uncompressed half-float planar-ABGR EXR (see export_examples.py)."""
+    order = [(b'A', 3), (b'B', 2), (b'G', 1), (b'R', 0)]
+
+    def get(i, si):
+        return pixels[i * nch + si] if si < nch else 1.0
+
+    ch = b''.join(n + b'\x00' + struct.pack('<iB3xii', 1, 0, 1, 1) for n, _ in order) + b'\x00'
+
+    def attr(n, t, v):
+        return n + b'\x00' + t + b'\x00' + struct.pack('<i', len(v)) + v
+
+    hdr = struct.pack('<2i', 20000630, 2)
+    hdr += attr(b'channels', b'chlist', ch)
+    hdr += attr(b'compression', b'compression', b'\x00')
+    hdr += attr(b'dataWindow', b'box2i', struct.pack('<4i', 0, 0, w - 1, h - 1))
+    hdr += attr(b'displayWindow', b'box2i', struct.pack('<4i', 0, 0, w - 1, h - 1))
+    hdr += attr(b'lineOrder', b'lineOrder', b'\x00')
+    hdr += attr(b'pixelAspectRatio', b'float', struct.pack('<f', 1.0))
+    hdr += b'\x00'
+    blocks = []
+    for y in range(h):
+        px = bytearray()
+        for _, si in order:
+            for x in range(w):
+                v = get(y * w + x, si)
+                px += struct.pack('<e', min(max(v, -65500.0), 65500.0))
+        blocks.append(struct.pack('<II', y, len(px)) + bytes(px))
+    off = len(hdr) + 8 * h
+    tbl = b''
+    for b in blocks:
+        tbl += struct.pack('<Q', off)
+        off += len(b)
+    with open(path, 'wb') as f:
+        f.write(hdr + tbl + b''.join(blocks))
+
+
 def is_simulation_baked(ob, mod_type):
     for mod in ob.modifiers:
         if mod.type != mod_type:
@@ -273,6 +312,17 @@ class OBJECT_OT_ProcessAnimMeshes(bpy.types.Operator):
     def execute(self, context):
         units = context.scene.unit_settings
         data = bpy.data
+        # Clean previous bake outputs: images.new() would otherwise create
+        # positions.001 / normals.001 while images.get("positions") keeps
+        # returning the stale imageless original (quick export then saves
+        # an empty image and fails).
+        old = data.objects.get("export_mesh")
+        if old:
+            data.objects.remove(old, do_unlink=True)
+        for name in ("positions", "normals"):
+            img = data.images.get(name)
+            if img:
+                data.images.remove(img)
         objects = [ob for ob in context.selected_objects if ob.type == 'MESH']
         vertex_count = sum([len(ob.data.vertices) for ob in objects])
         frame_count = len(frame_range(context.scene))
@@ -352,6 +402,59 @@ class OBJECT_OT_PrepareExplodeMesh(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class OBJECT_OT_VATQuickExport(bpy.types.Operator):
+    """Bake VAT with current panel settings and write .glb + textures to folder"""
+    bl_idname = "object.vat_quick_export"
+    bl_label = "Quick Export"
+
+    @classmethod
+    def poll(cls, context):
+        ob = context.active_object
+        vat = context.scene.vat_settings
+        return ob and ob.type == 'MESH' and ob.mode == 'OBJECT' and bool(vat.export_directory)
+
+    def execute(self, context):
+        vat = context.scene.vat_settings
+        directory = bpy.path.abspath(vat.export_directory)
+        basename = vat.export_basename.strip() or "vat_export"
+        os.makedirs(directory, exist_ok=True)
+        # Snapshot selection: bake consumes it, export retargets it.
+        src_objects = [ob for ob in context.selected_objects if ob.type == 'MESH']
+        src_active = context.view_layer.objects.active
+        # Reuse manual bake so panel choices stay authoritative.
+        # (Bake cleans its previous outputs, no stale images.)
+        res = bpy.ops.object.process_anim_meshes()
+        if res != {'FINISHED'}:
+            return res
+        exp = bpy.data.objects.get("export_mesh")
+        pos = bpy.data.images.get("positions")
+        nrm = bpy.data.images.get("normals")
+        if not exp or not pos or not nrm:
+            self.report({'ERROR'}, "Bake produced no export_mesh/positions/normals")
+            return {'CANCELLED'}
+        if vat.normalize:
+            pos.file_format = 'PNG'
+            pos.filepath_raw = os.path.join(directory, basename + "_positions.png")
+            pos.save()
+        else:
+            write_exr_half(os.path.join(directory, basename + "_positions.exr"),
+                           *pos.size[:], list(pos.pixels), pos.channels)
+        nrm.file_format = 'PNG'
+        nrm.filepath_raw = os.path.join(directory, basename + "_normals.png")
+        nrm.save()
+        bpy.ops.object.select_all(action='DESELECT')
+        exp.select_set(True)
+        context.view_layer.objects.active = exp
+        bpy.ops.export_scene.gltf(filepath=os.path.join(directory, basename + ".glb"),
+                                  export_format='GLB', use_selection=True)
+        bpy.ops.object.select_all(action='DESELECT')
+        for ob in src_objects:
+            ob.select_set(True)
+        context.view_layer.objects.active = src_active
+        self.report({'INFO'}, f"Quick Export -> {directory} {basename}.glb")
+        return {'FINISHED'}
+
+
 class VIEW3D_PT_VertexAnimation(bpy.types.Panel):
     """Creates a Panel in 3D Viewport"""
     bl_label = "Vertex Animation"
@@ -396,9 +499,19 @@ class VIEW3D_PT_VertexAnimation(bpy.types.Panel):
                 col.label(text=f"Output Size: {optimal_width} x {len(frame_range(scene)) * num_wraps}")
             col.label(text=f"Num Wraps: {num_wraps}")
         row = layout.row()
-        row.operator("object.process_anim_meshes")
-        row = layout.row()
         row.operator("object.prepare_explode_mesh")
+        row = layout.row()
+        row.operator("object.process_anim_meshes", text="Bake (manual)")
+
+        box = layout.box()
+        box.label(text="Quick Export (bake + files)")
+        box.prop(scene.vat_settings, "export_directory", text="Folder")
+        box.prop(scene.vat_settings, "export_basename", text="Name")
+        if scene.vat_settings.normalize:
+            box.label(text="positions -> PNG (normalized)")
+        else:
+            box.label(text="positions -> EXR half")
+        box.operator("object.vat_quick_export")
 
 
 class VATSettings(bpy.types.PropertyGroup):
@@ -441,12 +554,24 @@ class VATSettings(bpy.types.PropertyGroup):
         ],
         default='NONE'
     )
+    export_directory: bpy.props.StringProperty(
+        name="Export Folder",
+        description="Quick Export output folder (.glb + textures)",
+        subtype='DIR_PATH',
+        default="",
+    )
+    export_basename: bpy.props.StringProperty(
+        name="Export Name",
+        description="Quick Export base file name",
+        default="vat_export",
+    )
 
 
 def register():
     bpy.utils.register_class(VATSettings)
     bpy.utils.register_class(OBJECT_OT_ProcessAnimMeshes)
     bpy.utils.register_class(OBJECT_OT_PrepareExplodeMesh)
+    bpy.utils.register_class(OBJECT_OT_VATQuickExport)
     bpy.utils.register_class(VIEW3D_PT_VertexAnimation)
     bpy.types.Scene.vat_settings = bpy.props.PointerProperty(type=VATSettings)
 
@@ -454,6 +579,7 @@ def register():
 def unregister():
     del bpy.types.Scene.vat_settings
     bpy.utils.unregister_class(VIEW3D_PT_VertexAnimation)
+    bpy.utils.unregister_class(OBJECT_OT_VATQuickExport)
     bpy.utils.unregister_class(OBJECT_OT_PrepareExplodeMesh)
     bpy.utils.unregister_class(OBJECT_OT_ProcessAnimMeshes)
     bpy.utils.unregister_class(VATSettings)
