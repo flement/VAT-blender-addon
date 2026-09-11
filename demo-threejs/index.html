@@ -9,6 +9,7 @@
   </head>
   <body>
     <div id="app"></div>
+    <button id="panel-toggle" type="button" aria-label="Toggle panel">☰</button>
     <aside id="panel">
            <section>
         <h2>01 / ASSETS</h2>
@@ -69,7 +70,11 @@
           <button id="btn-reload" type="button">RELOAD</button>
         </div>
       </section>
+      <div class="foot">
+        <a href="https://github.com/flanb/VAT-blender-plugin/issues/new" target="_blank" rel="noopener" class="issue-link" title="Report an issue">Need help?</a>
+      </div>
     </aside>
+    <button id="texpreview-toggle" type="button" aria-label="Toggle textures">TEX</button>
     <div id="texpreview">
       <div class="prev-label">POSITIONS <span id="preview-pos-dims"></span></div>
       <canvas id="preview-pos"></canvas>

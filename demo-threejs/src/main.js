@@ -273,6 +273,12 @@ for (const input of panelInputs) {
 document.querySelector('#btn-frame-mesh').addEventListener('click', frameMeshCamera)
 document.querySelector('#btn-reload').addEventListener('click', () => reloadVat({ frameCamera: false }))
 
+// --- Responsive: off-canvas panel toggle (visible on <=768px via CSS) ---
+const panel = document.querySelector('#panel')
+document.querySelector('#panel-toggle').addEventListener('click', () => panel.classList.toggle('open'))
+const texpreview = document.querySelector('#texpreview')
+document.querySelector('#texpreview-toggle').addEventListener('click', () => texpreview.classList.toggle('open'))
+
 // --- Drag & drop + file pickers ---
 function setSource(slot, file) {
   if (sources[slot]?.startsWith('blob:')) URL.revokeObjectURL(sources[slot])

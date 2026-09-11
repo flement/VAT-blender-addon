@@ -1,5 +1,7 @@
 # VAT Blender Addon
 
+**Live demo: https://vat.residenceprincipale.net/**
+
 This Blender plugin generates Vertex Animation Textures (VAT) from animated meshes. It is designed to simplify the export of complex animations to Three.js or other, using textures to store vertex movements.
 
 https://github.com/user-attachments/assets/666ab17b-4e5b-4865-9454-8af4ba9a6aa2
@@ -90,7 +92,7 @@ The shader replays bind-pose faces, so chunks must already be separate:
 
 ## Three.js viewer (`demo-threejs/`)
 - Vite + three 0.186.0 viewer for `NONE` / `WRAP` / `WRAP_CROP` exports. `src/vat-material.js` holds the VAT sampling (`MeshStandardMaterial` + `onBeforeCompile`, normals decoded `*2-1` + `.xzy` swizzle, `vatNormalUv` mirror kept).
-- Run: `cd demo-threejs && bun install && bun run dev` (http://localhost:5173). Ships 19 bundled `VAT_*` examples (each mesh recentered on origin) with an EXAMPLE select; drop in Mesh `.glb` + Positions `.exr`/`.png` + Normals `.png`, tune bake params mirroring the Blender tab. See `demo-threejs/README.md`.
+- Run: `cd demo-threejs && bun install && bun run dev` (http://localhost:5173, live: https://vat.residenceprincipale.net/). Ships 19 bundled `VAT_*` examples (each mesh recentered on origin) with an EXAMPLE select; drop in Mesh `.glb` + Positions `.exr`/`.png` + Normals `.png`, tune bake params mirroring the Blender tab. See `demo-threejs/README.md`.
 
 ## Usage for threejs
 Blender uses Z as the up axis, while in Three.js the up axis is Y. Therefore, when sampling the position texture in GLSL, you should use `texturePos.xzy` to correctly map the axes.

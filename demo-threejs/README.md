@@ -1,5 +1,7 @@
 # VAT lab (three 0.186.0 + vite 8.3.0, no UI dependency)
 
+**Live demo: https://vat.residenceprincipale.net/**
+
 Viewer for NONE / WRAP / WRAP_CROP plugin exports. Ships with bundled examples
 (`public/examples.json` + `public/examples/<id>/<mode>/`, baked OFFSETS,
 flip_Y ON, 30 frames) switchable from the EXAMPLE + WRAP selects (`?ex=<id>`,

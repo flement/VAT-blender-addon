@@ -161,6 +161,11 @@ body {
   justify-content: space-between;
 }
 
+.issue-link {
+  color: black;
+  text-decoration: underline;
+}
+
 .overlay {
   position: fixed;
   inset: 0;
@@ -184,4 +189,58 @@ body {
   background: black;
   color: white;
   pointer-events: auto;
+}
+
+#panel-toggle {
+  display: none;
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  z-index: 20;
+  background: white;
+  border: 1px solid black;
+  width: 40px;
+  height: 40px;
+  font-size: 18px;
+  cursor: pointer;
+}
+
+#texpreview-toggle {
+  display: none;
+  position: fixed;
+  right: 10px;
+  bottom: 10px;
+  z-index: 20;
+  background: white;
+  border: 1px solid black;
+  padding: 8px 10px;
+  font: inherit;
+  cursor: pointer;
+}
+
+@media (max-width: 768px) {
+  #panel-toggle {
+    display: block;
+  }
+  #panel {
+    width: min(300px, 85vw);
+    z-index: 15;
+    transform: translateX(-100%);
+    transition: transform 0.2s;
+  }
+  #panel.open {
+    transform: none;
+  }
+  #texpreview {
+    width: 140px;
+    font-size: 10px;
+    transform: translateY(calc(100% + 10px));
+    transition: transform 0.2s;
+  }
+  #texpreview.open {
+    transform: none;
+  }
+  #texpreview-toggle {
+    display: block;
+  }
 }
