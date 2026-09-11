@@ -54,6 +54,7 @@ jobs:
         env:
           TOKEN: ${{ secrets.BLENDER_EXTENSIONS_TOKEN }}
         run: |
+          if [ -z "$TOKEN" ]; then echo "::error::BLENDER_EXTENSIONS_TOKEN secret is missing (Settings > Secrets > Actions)"; exit 1; fi
           EXT_ID=$(grep -E '^id = ' VAT/blender_manifest.toml | head -1 | cut -d'"' -f2)
           curl --fail -X POST "https://extensions.blender.org/api/v1/extensions/$EXT_ID/versions/upload/" \
             -H "Authorization: bearer $TOKEN" \
