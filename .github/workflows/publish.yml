@@ -1,0 +1,59 @@
+name: publish
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to (re-)publish, e.g. v1.0.6"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: ver
+        run: |
+          MANIFEST_VER=$(grep -E '^version = ' VAT/blender_manifest.toml | head -1 | cut -d'"' -f2)
+          echo "manifest=$MANIFEST_VER" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ -n "${{ inputs.tag }}" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          # ponytail: tag vX.Y.Z must equal manifest version, else fail fast
+          [ "$TAG" = "v$MANIFEST_VER" ] || { echo "::error::tag $TAG != manifest v$MANIFEST_VER"; exit 1; }
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Build addon zip
+        run: |
+          rm -f "VAT-${{ steps.ver.outputs.tag }}.zip"
+          zip -r "VAT-${{ steps.ver.outputs.tag }}.zip" VAT -x '*/__pycache__/*' -x '*/.DS_Store'
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.tag }}
+          generate_release_notes: true
+          files: VAT-${{ steps.ver.outputs.tag }}.zip
+
+      - name: Publish to extensions.blender.org
+        env:
+          TOKEN: ${{ secrets.BLENDER_EXTENSIONS_TOKEN }}
+        run: |
+          EXT_ID=$(grep -E '^id = ' VAT/blender_manifest.toml | head -1 | cut -d'"' -f2)
+          curl --fail -X POST "https://extensions.blender.org/api/v1/extensions/$EXT_ID/versions/upload/" \
+            -H "Authorization: bearer $TOKEN" \
+            -F "version_file=@VAT-${{ steps.ver.outputs.tag }}.zip" \
+            -F "release_notes=Release ${{ steps.ver.outputs.tag }}"

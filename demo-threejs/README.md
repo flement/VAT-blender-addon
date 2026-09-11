@@ -8,8 +8,8 @@ Section 04 shows a realtime preview of both textures in bake-row order with
 the sampled rows as playhead lines (`frame · mem rows […]`). Drop a bake in,
 tune the params live.
 
-Re-bake after scene changes: open `blender-tests/vat_test.blend` in Blender
-4.2+ with the VAT addon enabled and run `blender-tests/export_examples.py`
+Re-bake after scene changes: open `blender-examples/vat_test.blend` in Blender
+4.2+ with the VAT addon enabled and run `blender-examples/export_examples.py`
 (every `VAT_*` mesh → `<id>.glb` + `positions.exr` + `normals.png`).
 `positions.exr` is written half-float planar-ABGR by the script itself:
 Blender's `image.save()` EXR output misparses in third-party readers

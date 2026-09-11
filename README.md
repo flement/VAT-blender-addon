@@ -12,7 +12,7 @@ In the generated texture, the vertical axis (top to bottom) corresponds to anima
 In a real-time engine (such as Three.js), the static mesh is imported along with its animation textures. A shader reads these textures frame by frame to move the vertices, thus reproducing the original animation without the need for an armature or complex calculations on the engine side. This method allows exporting complex animations, including those from physics simulations or modifiers, while optimizing rendering performance.
 
 ## Installation
-1. Download this repo (or zip containing the `VAT` folder, with `VAT/__init__.py` + `VAT/blender_manifest.toml`, version 1.0.5).
+1. Download this repo — or grab the `VAT-vX.Y.Z.zip` from [Releases](../../releases) (published automatically when a `v*` tag matches `VAT/blender_manifest.toml`). The zip must contain `VAT/__init__.py` + `VAT/blender_manifest.toml` (currently 1.0.6).
 2. In Blender 4.2+, go to **Edit > Preferences > Add-ons**.
 3. Click **Install from Disk...** and select the `VAT` folder (or zip).
 4. Enable the addon in the list.
@@ -86,7 +86,7 @@ The shader replays bind-pose faces, so chunks must already be separate:
 ## Test scene (`blender-examples/`)
 - `blender-examples/vat_test.blend`: timeline 1–31 (step 1). Note `frame_range()` excludes the end frame → 30 baked frames.
 - Covers one `VAT_*` object per modifier family (ARMATURE, CAST, CLOTH draped on a collider, CURVE, DISPLACE, HOOK, LATTICE, MESH_DEFORM, SHRINKWRAP, SMOOTH family on hook spikes, SURFACE_DEFORM, SIMPLE_DEFORM twist, WARP, WAVE, SUBSURF, pre-split EXPLODE…).
-- Recipe: open in Blender 4.2+ with VAT enabled, select ONE test object (not `export_mesh`), set options in the VAT tab, run `Process Anim Meshes`. See `blender-examples/README.md`.
+- Recipe: open in Blender 4.2+ with VAT enabled, select ONE test object (not `export_mesh`), set options in the VAT tab, run `Process Anim Meshes`. Re-bake all examples with `blender-examples/export_examples.py` (see its header).
 
 ## Three.js viewer (`demo-threejs/`)
 - Vite + three 0.186.0 viewer for `NONE` / `WRAP` / `WRAP_CROP` exports. `src/vat-material.js` holds the VAT sampling (`MeshStandardMaterial` + `onBeforeCompile`, normals decoded `*2-1` + `.xzy` swizzle, `vatNormalUv` mirror kept).
