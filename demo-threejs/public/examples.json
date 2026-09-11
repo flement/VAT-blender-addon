@@ -2,12 +2,12 @@
   "examples": [
     {
       "id": "armature",
-      "label": "Armature \u2014 24v",
+      "label": "Armature \u2014 170v / 5 bones",
       "mesh": "/examples/armature/armature.glb",
       "positions": "/examples/armature/positions.exr",
       "normals": "/examples/armature/normals.png",
-      "frames": 30,
-      "numWraps": 1,
+      "frames": 60,
+      "numWraps": 2,
       "positionMode": "offsets",
       "flipY": true,
       "normalize": false,

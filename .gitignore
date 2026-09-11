@@ -4,3 +4,5 @@ dist
 *.blend1
 AGENTS.md
 .idea
+*.uni
+*.vdb
