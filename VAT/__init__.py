@@ -22,7 +22,7 @@
 bl_info = {
     "name": "VAT",
     "author": "Joshua Bogart and Clément Renou",
-    "version": (1, 0, 6),
+    "version": (1, 0, 10),
     "blender": (4, 2, 0),
     "location": "View3D > Sidebar > VAT Tab",
     "description": "A tool for storing per frame vertex data for use in a vertex shader.",
@@ -35,6 +35,8 @@ bl_info = {
 import bpy
 import bmesh
 import math
+import gzip
+import json
 import os
 import struct
 
@@ -82,17 +84,21 @@ def calculate_optimal_vat_resolution(num_vertices, num_frames):
 def create_export_mesh_object(context, data, me, size):
     """Return a mesh object with correct UVs"""
     vat = context.scene.vat_settings
-    if vat.wrap_mode != 'NONE':
+    # STORAGE_BUFFER indexes frames by vertex id recovered from uv.x in the
+    # shader (glTF export splits vertices on UV/normal seams, so vertexIndex
+    # is unreliable): force the NONE layout where u == (i + 0.5) / N.
+    wrap = 'NONE' if vat.export_mode == 'STORAGE_BUFFER' else vat.wrap_mode
+    if wrap != 'NONE':
         width, height, num_wraps = calculate_optimal_vat_resolution(size[0], size[1])
 
     while len(me.uv_layers) < 2:
         me.uv_layers.new()
     uv_layer = me.uv_layers[1]
     uv_layer.name = "vertex_anim"
-    if vat.wrap_mode != 'NONE':
+    if wrap != 'NONE':
         for loop in me.loops:
             u = (loop.vertex_index % width + 0.5) / width
-            if vat.wrap_mode == 'WRAP_CROP':
+            if wrap == 'WRAP_CROP':
                 v = (loop.vertex_index // width) / num_wraps
             else:
                 v = (loop.vertex_index // width) / height * size[1]
@@ -285,6 +291,104 @@ def write_exr_half(path, w, h, pixels, nch):
         f.write(hdr + tbl + b''.join(blocks))
 
 
+# Session cache for STORAGE_BUFFER mode: manual bake has no output folder,
+# so raw frames are stashed here for Quick Export to write to disk.
+_storage_cache = {}
+
+
+# Storage precision presets: offsets layout + normals layout +
+# bytes per vertex per frame. Normals stay octahedral except EXACT.
+# Offsets = per-axis motion, quantized on 8/16/32 bits over the baked
+# range (u8/u16/f32). Normals = per-vertex direction: octahedral ("oct",
+# a unit direction folded to 2 bytes, ~0.7 deg max error) or raw float32.
+# "bytes" is per vertex per frame for that part, before gzip.
+OFFSET_FORMATS = {
+    'U8': {"layout": "u8x3", "bytes": 3, "label": "u8 (3 B)",
+           "about": "Motion on 8 bits per axis (~0.4% range steps, banding "
+                    "possible close-up). Smallest."},
+    'U16': {"layout": "u16x3", "bytes": 6, "label": "u16 (6 B)",
+            "about": "Motion on 16 bits (~0.0015% steps, sub-mm at meter "
+                     "scale). Default."},
+    'F32': {"layout": "f32x3", "bytes": 12, "label": "f32 (12 B)",
+            "about": "Motion unquantized (raw float32). Reference quality."},
+}
+NORMAL_FORMATS = {
+    'OCT': {"layout": "oct8x2", "bytes": 2, "label": "oct (2 B)",
+            "about": "Unit direction folded to 2 bytes (~0.7 deg max "
+                     "error). Default."},
+    'F32': {"layout": "f32x3", "bytes": 12, "label": "f32 (12 B)",
+            "about": "Direction unquantized (raw float32). Reference."},
+}
+
+
+def format_bytes(n):
+    """Human size for panel estimates."""
+    for unit in ("B", "KiB", "MiB", "GiB"):
+        if n < 1024 or unit == "GiB":
+            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+        n /= 1024
+
+
+def _oct_encode(nx, ny, nz):
+    """Octahedral-encode a unit normal to 2 signed bytes (see vat-storage.js)."""
+    l = math.sqrt(nx * nx + ny * ny + nz * nz) or 1.0
+    nx, ny, nz = nx / l, ny / l, nz / l
+    inv = 1.0 / ((abs(nx) + abs(ny) + abs(nz)) or 1.0)
+    x, y = nx * inv, ny * inv
+    if nz < 0.0:
+        ox, oy = x, y
+        x = (1.0 - abs(oy)) * (1.0 if ox >= 0.0 else -1.0)
+        y = (1.0 - abs(ox)) * (1.0 if oy >= 0.0 else -1.0)
+    return (max(-127, min(127, round(x * 127))),
+            max(-127, min(127, round(y * 127))))
+
+
+def write_storage_buffer(path, meta_path, offsets, normals, meta):
+    """Write animation frames as a packed, gzipped buffer (VAB format).
+
+    Layout per [frame][vertex]: offsets as 3 half-floats (xyz, w dropped;
+    clamped to +/-65000), normals octahedral-encoded to 2 signed bytes.
+    8 bytes/vertex/frame (vs 32 unpacked). Offsets carry the -y swizzle
+    from get_vertex_data; normals are raw (-1..1). No texture padding,
+    wrap, or flip. The JSON sidecar is authoritative (layout/compression).
+    """
+    # Offsets are always range-quantized (uniform 1/65535 steps over the
+    # baked range: ~0.15mm on a 10m range). This replaces the Normalize
+    # toggle for storage: meta carries its own range, the loader inverts it.
+    n = meta["vertexCount"] * meta["frameCount"]
+    assert len(offsets) == len(normals) == n * 4
+    layout = meta["layout"]
+    xyz = [offsets[v * 4 + j] for v in range(n) for j in range(3)]
+    min_o, max_o = min(xyz), max(xyz)
+    span = (max_o - min_o) or 1.0
+    meta["minOffset"] = min_o
+    meta["maxOffset"] = max_o
+    meta["normalize"] = False
+    buf = bytearray()
+    if layout["offsets"] == "u8x3":
+        buf += struct.pack(f'<{3 * n}B',
+                           *[round((v - min_o) / span * 255) for v in xyz])
+    elif layout["offsets"] == "u16x3":
+        buf += struct.pack(f'<{3 * n}H',
+                           *[round((v - min_o) / span * 65535) for v in xyz])
+    else:
+        buf += struct.pack(f'<{3 * n}f', *xyz)
+    if layout["normals"] == "oct8x2":
+        for v in range(n):
+            buf += struct.pack('<2b', *_oct_encode(*normals[v * 4:v * 4 + 3]))
+    else:
+        buf += struct.pack(f'<{3 * n}f',
+                           *[c for v in range(n) for c in normals[v * 4:v * 4 + 3]])
+    bpv = ({"u8x3": 3, "u16x3": 6, "f32x3": 12}[layout["offsets"]]
+           + {"oct8x2": 2, "f32x3": 12}[layout["normals"]])
+    assert len(buf) == n * bpv, (len(buf), n * bpv)
+    meta["compression"] = "gzip"
+    with open(path, 'wb') as f:
+        f.write(gzip.compress(bytes(buf)))
+    with open(meta_path, 'w') as f:
+        json.dump(meta, f, indent=2)
+
+
 def is_simulation_baked(ob, mod_type):
     for mod in ob.modifiers:
         if mod.type != mod_type:
@@ -369,7 +473,24 @@ class OBJECT_OT_ProcessAnimMeshes(bpy.types.Operator):
         texture_size = max_count, len(frame_range(context.scene))
         create_export_mesh_object(context, data, export_mesh_data, texture_size)
         offsets, normals = get_vertex_data(context, data, meshes)
-        bake_vertex_data(context, self, data, offsets, normals, texture_size)
+        vat = context.scene.vat_settings
+        if vat.export_mode == 'STORAGE_BUFFER':
+            # No Normalize rescale here (PNG-only): write_storage_buffer
+            # derives its own range and stores it in the JSON sidecar.
+            _storage_cache['offsets'] = list(offsets)
+            _storage_cache['normals'] = [n * 2.0 - 1.0 if i % 4 != 3 else n
+                                         for i, n in enumerate(normals)]
+            _storage_cache['vertex_count'] = max_count
+            _storage_cache['frame_count'] = len(frame_range(context.scene))
+            bpv = (OFFSET_FORMATS[vat.offset_precision]["bytes"]
+                   + NORMAL_FORMATS[vat.normal_precision]["bytes"])
+            nframes = len(frame_range(context.scene))
+            self.report({'INFO'}, f"Storage buffer ready: {max_count} verts x "
+                        f"{nframes} frames "
+                        f"(~{format_bytes(max_count * nframes * bpv)} raw, "
+                        f"use Quick Export to write files)")
+        else:
+            bake_vertex_data(context, self, data, offsets, normals, texture_size)
 
         return {'FINISHED'}
 
@@ -427,21 +548,45 @@ class OBJECT_OT_VATQuickExport(bpy.types.Operator):
         if res != {'FINISHED'}:
             return res
         exp = bpy.data.objects.get("export_mesh")
+        if not exp:
+            self.report({'ERROR'}, "Bake produced no export_mesh")
+            return {'CANCELLED'}
+        if vat.export_mode == 'STORAGE_BUFFER':
+            c = _storage_cache
+            if not c.get('offsets'):
+                self.report({'ERROR'}, "Storage bake produced no data")
+                return {'CANCELLED'}
+            # format id: bump when the .bin layout changes so old files
+            # fail loudly in the viewer instead of rendering garbage.
+            meta = {"format": "vat-storage/1",
+                    "basename": basename, "positionMode": vat.position_mode.lower(),
+                    "fps": context.scene.render.fps,
+                    "normalize": vat.normalize,
+                    "minOffset": vat.min_offset, "maxOffset": vat.max_offset}
+            meta["vertexCount"] = c['vertex_count']
+            meta["frameCount"] = c['frame_count']
+            meta["layout"] = {
+                "offsets": OFFSET_FORMATS[vat.offset_precision]["layout"],
+                "normals": NORMAL_FORMATS[vat.normal_precision]["layout"]}
+            write_storage_buffer(os.path.join(directory, basename + "_vat.bin"),
+                                 os.path.join(directory, basename + "_vat.json"),
+                                 c['offsets'], c['normals'], meta)
         pos = bpy.data.images.get("positions")
         nrm = bpy.data.images.get("normals")
-        if not exp or not pos or not nrm:
-            self.report({'ERROR'}, "Bake produced no export_mesh/positions/normals")
+        if vat.export_mode != 'STORAGE_BUFFER' and (not pos or not nrm):
+            self.report({'ERROR'}, "Bake produced no positions/normals")
             return {'CANCELLED'}
-        if vat.normalize:
-            pos.file_format = 'PNG'
-            pos.filepath_raw = os.path.join(directory, basename + "_positions.png")
-            pos.save()
-        else:
-            write_exr_half(os.path.join(directory, basename + "_positions.exr"),
-                           *pos.size[:], list(pos.pixels), pos.channels)
-        nrm.file_format = 'PNG'
-        nrm.filepath_raw = os.path.join(directory, basename + "_normals.png")
-        nrm.save()
+        if vat.export_mode != 'STORAGE_BUFFER':
+            if vat.normalize:
+                pos.file_format = 'PNG'
+                pos.filepath_raw = os.path.join(directory, basename + "_positions.png")
+                pos.save()
+            else:
+                write_exr_half(os.path.join(directory, basename + "_positions.exr"),
+                               *pos.size[:], list(pos.pixels), pos.channels)
+            nrm.file_format = 'PNG'
+            nrm.filepath_raw = os.path.join(directory, basename + "_normals.png")
+            nrm.save()
         bpy.ops.object.select_all(action='DESELECT')
         exp.select_set(True)
         context.view_layer.objects.active = exp
@@ -483,21 +628,32 @@ class VIEW3D_PT_VertexAnimation(bpy.types.Panel):
         col.prop(scene, "frame_end", text="End")
         col.prop(scene, "frame_step", text="Step")
         col.prop(scene.vat_settings, "position_mode", text="Position Mode")
-        col.prop(scene.vat_settings, "flip_y", text="Flip Y")
-        col.prop(scene.vat_settings, "normalize", text="Normalize (useful for png)")
-        if scene.vat_settings.normalize:
-            col.label(text=f"Min Offset: {scene.vat_settings.min_offset:.4f}")
-            col.label(text=f"Max Offset: {scene.vat_settings.max_offset:.4f}")
-        col.prop(scene.vat_settings, "wrap_mode", text="Wrap Mode")
-        if scene.vat_settings.wrap_mode != 'NONE':
-            optimal_width, optimal_height, num_wraps = calculate_optimal_vat_resolution(len(obj.data.vertices), len(frame_range(scene)))
-            y_percent_used = len(frame_range(scene)) * num_wraps / optimal_height
-            if scene.vat_settings.wrap_mode == 'WRAP':
-                col.label(text=f"Output Size: {optimal_width} x {optimal_height}")
-                col.label(text=f"Y Used: {y_percent_used}")
-            else:
-                col.label(text=f"Output Size: {optimal_width} x {len(frame_range(scene)) * num_wraps}")
-            col.label(text=f"Num Wraps: {num_wraps}")
+        col.prop(scene.vat_settings, "export_mode", text="Export Mode")
+        if scene.vat_settings.export_mode == 'STORAGE_BUFFER':
+            col.prop(scene.vat_settings, "offset_precision", text="Offsets")
+            col.prop(scene.vat_settings, "normal_precision", text="Normals")
+            bpv = (OFFSET_FORMATS[scene.vat_settings.offset_precision]["bytes"]
+                   + NORMAL_FORMATS[scene.vat_settings.normal_precision]["bytes"])
+            est = bpv * len(obj.data.vertices) * len(frame_range(scene))
+            col.label(text=f"Est: ~{format_bytes(est)} raw (gzip shrinks further)")
+        else:
+            # Texture-only controls: no image is baked in Storage mode,
+            # so flip/normalize/wrap have no effect there.
+            col.prop(scene.vat_settings, "flip_y", text="Flip Y")
+            col.prop(scene.vat_settings, "normalize", text="Normalize (useful for png)")
+            if scene.vat_settings.normalize:
+                col.label(text=f"Min Offset: {scene.vat_settings.min_offset:.4f}")
+                col.label(text=f"Max Offset: {scene.vat_settings.max_offset:.4f}")
+            col.prop(scene.vat_settings, "wrap_mode", text="Wrap Mode")
+            if scene.vat_settings.wrap_mode != 'NONE':
+                optimal_width, optimal_height, num_wraps = calculate_optimal_vat_resolution(len(obj.data.vertices), len(frame_range(scene)))
+                y_percent_used = len(frame_range(scene)) * num_wraps / optimal_height
+                if scene.vat_settings.wrap_mode == 'WRAP':
+                    col.label(text=f"Output Size: {optimal_width} x {optimal_height}")
+                    col.label(text=f"Y Used: {y_percent_used}")
+                else:
+                    col.label(text=f"Output Size: {optimal_width} x {len(frame_range(scene)) * num_wraps}")
+                col.label(text=f"Num Wraps: {num_wraps}")
         row = layout.row()
         row.operator("object.prepare_explode_mesh")
         row = layout.row()
@@ -507,7 +663,9 @@ class VIEW3D_PT_VertexAnimation(bpy.types.Panel):
         box.label(text="Quick Export (bake + files)")
         box.prop(scene.vat_settings, "export_directory", text="Folder")
         box.prop(scene.vat_settings, "export_basename", text="Name")
-        if scene.vat_settings.normalize:
+        if scene.vat_settings.export_mode == 'STORAGE_BUFFER':
+            box.label(text="frames -> .bin + .json (storage buffer)")
+        elif scene.vat_settings.normalize:
             box.label(text="positions -> PNG (normalized)")
         else:
             box.label(text="positions -> EXR half")
@@ -544,6 +702,15 @@ class VATSettings(bpy.types.PropertyGroup):
         description="Max offset value",
         default=0
     )
+    export_mode: bpy.props.EnumProperty(
+        name="Export Mode",
+        description="VAT Texture bakes images; Storage Buffer exports a flat .bin for WebGPU storage buffers",
+        items=[
+            ('VAT_TEXTURE', "VAT Texture", "Bake positions/normals images (current behavior)"),
+            ('STORAGE_BUFFER', "Storage Buffer", "Export flat .bin + .json for WebGPU buffer<storage>"),
+        ],
+        default='VAT_TEXTURE'
+    )
     wrap_mode: bpy.props.EnumProperty(
         name="Wrap Mode",
         description="Wrap texture mode",
@@ -553,6 +720,20 @@ class VATSettings(bpy.types.PropertyGroup):
             ('WRAP_CROP', "Wrap and Crop", "Wrap texture and crop to optimal size")
         ],
         default='NONE'
+    )
+    offset_precision: bpy.props.EnumProperty(
+        name="Offset Precision",
+        description="Per-axis motion quantization (weight vs fidelity)",
+        items=[(k, p["label"], p["about"])
+               for k, p in OFFSET_FORMATS.items()],
+        default='U16'
+    )
+    normal_precision: bpy.props.EnumProperty(
+        name="Normal Precision",
+        description="Per-vertex direction quantization (weight vs fidelity)",
+        items=[(k, p["label"], p["about"])
+               for k, p in NORMAL_FORMATS.items()],
+        default='OCT'
     )
     export_directory: bpy.props.StringProperty(
         name="Export Folder",
@@ -577,12 +758,17 @@ def register():
 
 
 def unregister():
-    del bpy.types.Scene.vat_settings
-    bpy.utils.unregister_class(VIEW3D_PT_VertexAnimation)
-    bpy.utils.unregister_class(OBJECT_OT_VATQuickExport)
-    bpy.utils.unregister_class(OBJECT_OT_PrepareExplodeMesh)
-    bpy.utils.unregister_class(OBJECT_OT_ProcessAnimMeshes)
-    bpy.utils.unregister_class(VATSettings)
+    # Tolerant: disable/reinstall cycles may run this with only part of
+    # the addon registered; never leave Blender in a half-removed state.
+    for cls in (VIEW3D_PT_VertexAnimation, OBJECT_OT_VATQuickExport,
+                OBJECT_OT_PrepareExplodeMesh, OBJECT_OT_ProcessAnimMeshes,
+                VATSettings):
+        try:
+            bpy.utils.unregister_class(cls)
+        except (RuntimeError, ValueError):
+            pass
+    if hasattr(bpy.types.Scene, "vat_settings"):
+        del bpy.types.Scene.vat_settings
 
 
 if __name__ == "__main__":
