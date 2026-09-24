@@ -1,0 +1,16 @@
+{
+  "format": "vat-storage/1",
+  "basename": "explode_storage",
+  "positionMode": "offsets",
+  "fps": 24,
+  "vertexCount": 144,
+  "frameCount": 60,
+  "minOffset": -3.6768593788146973,
+  "maxOffset": 2.5939178466796875,
+  "normalize": false,
+  "layout": {
+    "offsets": "u16x3",
+    "normals": "oct8x2"
+  },
+  "compression": "gzip"
+}

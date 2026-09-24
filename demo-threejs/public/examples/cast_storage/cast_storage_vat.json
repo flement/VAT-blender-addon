@@ -1,0 +1,16 @@
+{
+  "format": "vat-storage/1",
+  "basename": "cast_storage",
+  "positionMode": "offsets",
+  "fps": 24,
+  "vertexCount": 8,
+  "frameCount": 60,
+  "minOffset": -0.15470051765441895,
+  "maxOffset": 0.15470051765441895,
+  "normalize": false,
+  "layout": {
+    "offsets": "u16x3",
+    "normals": "oct8x2"
+  },
+  "compression": "gzip"
+}

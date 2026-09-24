@@ -1,0 +1,16 @@
+{
+  "format": "vat-storage/1",
+  "basename": "wireframe_storage",
+  "positionMode": "offsets",
+  "fps": 24,
+  "vertexCount": 172,
+  "frameCount": 60,
+  "minOffset": -0.22500038146972656,
+  "maxOffset": 0.22500038146972656,
+  "normalize": false,
+  "layout": {
+    "offsets": "u16x3",
+    "normals": "oct8x2"
+  },
+  "compression": "gzip"
+}

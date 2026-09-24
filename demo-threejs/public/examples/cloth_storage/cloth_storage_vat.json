@@ -1,0 +1,16 @@
+{
+  "format": "vat-storage/1",
+  "basename": "cloth_storage",
+  "positionMode": "offsets",
+  "fps": 24,
+  "vertexCount": 100,
+  "frameCount": 60,
+  "minOffset": -1.8951289653778076,
+  "maxOffset": 0.29513072967529297,
+  "normalize": false,
+  "layout": {
+    "offsets": "u16x3",
+    "normals": "oct8x2"
+  },
+  "compression": "gzip"
+}

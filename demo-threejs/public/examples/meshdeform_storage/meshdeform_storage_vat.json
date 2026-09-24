@@ -1,0 +1,16 @@
+{
+  "format": "vat-storage/1",
+  "basename": "meshdeform_storage",
+  "positionMode": "offsets",
+  "fps": 24,
+  "vertexCount": 64,
+  "frameCount": 60,
+  "minOffset": -0.0,
+  "maxOffset": 0.5401287078857422,
+  "normalize": false,
+  "layout": {
+    "offsets": "u16x3",
+    "normals": "oct8x2"
+  },
+  "compression": "gzip"
+}

@@ -1,0 +1,16 @@
+{
+  "format": "vat-storage/1",
+  "basename": "shrinkwrap_storage",
+  "positionMode": "offsets",
+  "fps": 24,
+  "vertexCount": 64,
+  "frameCount": 60,
+  "minOffset": -0.4241018295288086,
+  "maxOffset": 0.25981998443603516,
+  "normalize": false,
+  "layout": {
+    "offsets": "u16x3",
+    "normals": "oct8x2"
+  },
+  "compression": "gzip"
+}

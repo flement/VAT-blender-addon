@@ -1,0 +1,16 @@
+{
+  "format": "vat-storage/1",
+  "basename": "armature_storage",
+  "positionMode": "offsets",
+  "fps": 24,
+  "vertexCount": 170,
+  "frameCount": 60,
+  "minOffset": -1.2783217430114746,
+  "maxOffset": 4.799811363220215,
+  "normalize": false,
+  "layout": {
+    "offsets": "u16x3",
+    "normals": "oct8x2"
+  },
+  "compression": "gzip"
+}
