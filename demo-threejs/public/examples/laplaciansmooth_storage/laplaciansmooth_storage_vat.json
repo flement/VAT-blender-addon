@@ -1,5 +1,5 @@
 {
-  "format": "vat-storage/1",
+  "format": "vat-storage/2",
   "basename": "laplaciansmooth_storage",
   "positionMode": "offsets",
   "fps": 24,
@@ -12,5 +12,10 @@
     "offsets": "u16x3",
     "normals": "oct8x2"
   },
-  "compression": "gzip"
+  "compression": "gzip",
+  "order": "vertex-major",
+  "delta": {
+    "offsets": true,
+    "normals": false
+  }
 }

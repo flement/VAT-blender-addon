@@ -16,7 +16,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { EXRLoader } from 'three/addons/loaders/EXRLoader.js'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { createVatMaterial, syncVatUniforms } from './vat-material.js'
-import { createVatStorageMaterial, loadVatStorage } from './vat-storage.js'
+import { createVatStorageMaterial, loadVatStorage, syncVatStorageUniforms } from './vat-storage.js'
 import { buildPreview } from './vat-preview.js'
 
 const params = {
@@ -34,6 +34,8 @@ const params = {
   playing: true,
   reverse: false,
   time: 0,
+  step: 1,
+  smooth: true,
 }
 
 const sources = { mesh: '', positions: '', normals: '', storage: '', storageMeta: '' }
@@ -76,6 +78,12 @@ addEventListener('resize', () => {
 let vat = null // { material, uniforms }
 let vatRoot = null
 let vatMesh = null
+let storageSummary = ''
+
+function storagePlaybackSuffix() {
+  if (params.backend !== 'storage' || !vat) return ''
+  return ` | step x${params.step}${params.smooth ? ' smooth' : ''}`
+}
 
 function setStatus(lines) {
   statusBox.textContent = lines.join('\n')
@@ -150,11 +158,12 @@ async function reloadVat({ frameCamera }) {
         minOffset: meta.minOffset ?? 0,
         maxOffset: meta.maxOffset ?? 1,
       })
-      vat = createVatStorageMaterial({ offsets, normals, meta })
+      vat = createVatStorageMaterial({ offsets, normals, meta, params })
       lastPosTex = lastNrmTex = null
       preview = null
       syncPanelInputs()
-      setStatus([`storage ${verts} verts x ${params.frames} frames (.bin)`, ...(uvWarn ? [`⚠ ${uvWarn}`] : [])])
+      storageSummary = `storage ${verts} verts x ${params.frames} frames (.bin)`
+      setStatus([storageSummary + storagePlaybackSuffix(), ...(uvWarn ? [`⚠ ${uvWarn}`] : [])])
     } else {
       if (!nextMesh.geometry.getAttribute('uv1') && !nextMesh.geometry.getAttribute('uv')) {
         throw new Error('Mesh has no UVs (vertex_anim expected as second UV set)')
@@ -278,6 +287,9 @@ function syncPanelInputs() {
     else if (input.tagName === 'SELECT') input.value = params[key]
     else input.value = params[key]
     if (key === 'time') input.max = frameDuration()
+    // STEP/SMOOTH only drive the storage shader (textures already have
+    // TEX_FILTER linear/nearest for the same hold-vs-lerp choice).
+    if (key === 'step' || key === 'smooth') input.disabled = params.backend !== 'storage'
   }
 }
 
@@ -287,6 +299,7 @@ for (const input of panelInputs) {
     if (input.type === 'checkbox') params[key] = input.checked
     else if (input.type === 'number' || input.type === 'range') params[key] = Number(input.value)
     else params[key] = input.value
+    if (key === 'step') params.step = Math.max(1, Math.round(params.step) || 1)
     if (key === 'frames' || key === 'fps') {
       const total = frameDuration()
       params.time = Math.min(params.time, total)
@@ -298,16 +311,17 @@ for (const input of panelInputs) {
       params.numWraps = params.wrapMode === 'none' ? 1 : Math.max(1, Math.round(params.texHeight / params.frames))
       refreshPreview()
     }
-    if (params.backend === 'storage' && vat && (key === 'positionMode' || key === 'normalize' || key === 'minOffset' || key === 'maxOffset')) {
-      vat.uniforms.isOffsets.value = params.positionMode === 'offsets'
-      vat.uniforms.denormalize.value = params.normalize
-      vat.uniforms.minOffset.value = params.minOffset
-      vat.uniforms.maxOffset.value = params.maxOffset
+    if (params.backend === 'storage' && vat) {
+      if (key === 'positionMode' || key === 'normalize' || key === 'minOffset' || key === 'maxOffset'
+        || key === 'step' || key === 'smooth') {
+        syncVatStorageUniforms(vat.uniforms, params)
+      }
+      if (key === 'step' || key === 'smooth') setStatus([storageSummary + storagePlaybackSuffix()])
     }
     if ((key === "texFilter" || key === "backend") && vat) {
       reloadVat({ frameCamera: false }).catch(() => {})
     }
-    if (vat) syncVatUniforms(vat.uniforms, params)
+    if (vat && params.backend !== 'storage') syncVatUniforms(vat.uniforms, params)
     syncPanelInputs()
   })
 }

@@ -322,11 +322,42 @@ NORMAL_FORMATS = {
 
 
 def format_bytes(n):
-    """Human size for panel estimates."""
-    for unit in ("B", "KiB", "MiB", "GiB"):
-        if n < 1024 or unit == "GiB":
+    """Human size for panel estimates (decimal MB, matches file browsers)."""
+    n = float(n)
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1000 or unit == "GB":
             return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
-        n /= 1024
+        n /= 1000
+
+
+def count_selected_eval_verts(context):
+    """Best-effort vertex count for the storage estimate.
+
+    Bake combines every selected mesh after depsgraph eval, so the base
+    mesh count lies whenever modifiers/caches add verts (Subdiv,
+    MeshSequenceCache, ...). Probe the depsgraph once at the current
+    frame; fall back to base counts if eval fails. Topology may still
+    vary across frames (bake pads rows to the largest frame), so callers
+    must label this a rough estimate.
+    """
+    objects = [ob for ob in context.selected_objects if ob.type == 'MESH']
+    if not objects:
+        return 0
+    try:
+        depsgraph = context.evaluated_depsgraph_get()
+        total = 0
+        for ob in objects:
+            eval_ob = ob.evaluated_get(depsgraph)
+            mesh = eval_ob.to_mesh()
+            try:
+                total += len(mesh.vertices)
+            finally:
+                eval_ob.to_mesh_clear()
+        if total > 0:
+            return total
+    except Exception:
+        pass
+    return sum(len(ob.data.vertices) for ob in objects if ob.data)
 
 
 def _oct_encode(nx, ny, nz):
@@ -344,13 +375,21 @@ def _oct_encode(nx, ny, nz):
 
 
 def write_storage_buffer(path, meta_path, offsets, normals, meta):
-    """Write animation frames as a packed, gzipped buffer (VAB format).
+    """Write animation frames as a packed, gzipped buffer (vat-storage/2).
 
-    Layout per [frame][vertex]: offsets as 3 half-floats (xyz, w dropped;
-    clamped to +/-65000), normals octahedral-encoded to 2 signed bytes.
-    8 bytes/vertex/frame (vs 32 unpacked). Offsets carry the -y swizzle
-    from get_vertex_data; normals are raw (-1..1). No texture padding,
-    wrap, or flip. The JSON sidecar is authoritative (layout/compression).
+    Vertex-major order ([vertex][frame]): one vertex's consecutive frames
+    sit next to each other, so gzip's 32 KB window sees temporal
+    coherence (frame-major strided same-vertex samples ~400 KB apart on
+    dense meshes, invisible to gzip).
+    Integer offsets are delta-coded per vertex (frame 0 absolute, then
+    frame-to-frame diffs as i16): cloth-style motion yields small diffs
+    whose zero high bytes gzip crushes (~-35% on tested cloth sim vs
+    vat-storage/1, bit-exact on decode). Oct normals are delta-coded the
+    same way when it gzips smaller.
+    F32 layouts are transposed but never delta-coded
+    (float cumsum would drift). When a motion spike exceeds i16 range,
+    or plain absolute happens to gzip smaller (near-static meshes),
+    offsets fall back to absolute transposed and meta flags it.
     """
     # Offsets are always range-quantized (uniform 1/65535 steps over the
     # baked range: ~0.15mm on a 10m range). This replaces the Normalize
@@ -358,30 +397,101 @@ def write_storage_buffer(path, meta_path, offsets, normals, meta):
     n = meta["vertexCount"] * meta["frameCount"]
     assert len(offsets) == len(normals) == n * 4
     layout = meta["layout"]
+    V, F = meta["vertexCount"], meta["frameCount"]
     xyz = [offsets[v * 4 + j] for v in range(n) for j in range(3)]
     min_o, max_o = min(xyz), max(xyz)
     span = (max_o - min_o) or 1.0
+    meta["format"] = "vat-storage/2"
+    meta["order"] = "vertex-major"
     meta["minOffset"] = min_o
     meta["maxOffset"] = max_o
     meta["normalize"] = False
-    buf = bytearray()
-    if layout["offsets"] == "u8x3":
-        buf += struct.pack(f'<{3 * n}B',
-                           *[round((v - min_o) / span * 255) for v in xyz])
-    elif layout["offsets"] == "u16x3":
-        buf += struct.pack(f'<{3 * n}H',
-                           *[round((v - min_o) / span * 65535) for v in xyz])
+    delta = {"offsets": False, "normals": False}
+
+    if layout["offsets"] in ("u8x3", "u16x3"):
+        qmax = 255 if layout["offsets"] == "u8x3" else 65535
+        atag = 'B' if layout["offsets"] == "u8x3" else 'H'
+    elif layout["offsets"] == "f32x3":
+        qmax = atag = None
     else:
-        buf += struct.pack(f'<{3 * n}f', *xyz)
-    if layout["normals"] == "oct8x2":
-        for v in range(n):
-            buf += struct.pack('<2b', *_oct_encode(*normals[v * 4:v * 4 + 3]))
-    else:
-        buf += struct.pack(f'<{3 * n}f',
-                           *[c for v in range(n) for c in normals[v * 4:v * 4 + 3]])
+        raise ValueError(f"Unknown offsets layout {layout['offsets']!r}")
+    if layout["normals"] not in ("oct8x2", "f32x3"):
+        raise ValueError(f"Unknown normals layout {layout['normals']!r}")
+    q = ([round((v - min_o) / span * qmax) for v in xyz]
+         if qmax is not None else None)
+
+    def pack_offsets(use_delta):
+        out = bytearray()
+        if q is not None:
+            if use_delta:
+                for v in range(V):
+                    out += struct.pack(f'<3{atag}', *[q[(0 * V + v) * 3 + j] for j in range(3)])
+                    prev = [q[(0 * V + v) * 3 + j] for j in range(3)]
+                    for f in range(1, F):
+                        cur = [q[(f * V + v) * 3 + j] for j in range(3)]
+                        out += struct.pack('<3h', *[cur[j] - prev[j] for j in range(3)])
+                        prev = cur
+            else:
+                for v in range(V):
+                    for f in range(F):
+                        out += struct.pack(f'<3{atag}', *[q[(f * V + v) * 3 + j] for j in range(3)])
+        else:
+            for v in range(V):
+                for f in range(F):
+                    out += struct.pack('<3f', *[xyz[(f * V + v) * 3 + j] for j in range(3)])
+        return out
+
+    def pack_normals(use_delta=False):
+        out = bytearray()
+        if layout["normals"] == "oct8x2":
+            for v in range(V):
+                prev = None
+                for f in range(F):
+                    i = (f * V + v) * 4
+                    cur = _oct_encode(*normals[i:i + 3])
+                    if use_delta and prev is not None:
+                        out += struct.pack('<2h', cur[0] - prev[0], cur[1] - prev[1])
+                    else:
+                        out += struct.pack('<2b', *cur)
+                    prev = cur
+        else:
+            for v in range(V):
+                for f in range(F):
+                    i = (f * V + v) * 4
+                    out += struct.pack('<3f', *normals[i:i + 3])
+        return out
+
     bpv = ({"u8x3": 3, "u16x3": 6, "f32x3": 12}[layout["offsets"]]
            + {"oct8x2": 2, "f32x3": 12}[layout["normals"]])
-    assert len(buf) == n * bpv, (len(buf), n * bpv)
+    # Keep the gzipped-smallest representation (same raw size either
+    # way; near-static meshes can prefer absolute). Oct deltas always
+    # fit i16 (encoded range is +-127).
+    if q is not None:
+        maxd = 0
+        for v in range(V):
+            for f in range(1, F):
+                for j in range(3):
+                    d = abs(q[(f * V + v) * 3 + j] - q[((f - 1) * V + v) * 3 + j])
+                    if d > maxd:
+                        maxd = d
+        off_cands = ([(pack_offsets(True), True)] if maxd <= 32767 else []) \
+            + [(pack_offsets(False), False)]
+    else:
+        off_cands = [(pack_offsets(False), False)]
+    nrm_cands = [(pack_normals(False), False)]
+    if layout["normals"] == "oct8x2":
+        nrm_cands.append((pack_normals(True), True))
+    buf, use_delta, nrm, use_ndelta = min(
+        ((o, od, m, nd) for o, od in off_cands for m, nd in nrm_cands),
+        key=lambda c: len(gzip.compress(bytes(c[0] + c[2]), compresslevel=9)))
+    delta["offsets"] = use_delta
+    delta["normals"] = use_ndelta
+    buf = buf + nrm
+    # Delta normals store i16 diffs (4 B) past frame 0, so raw grows by
+    # 2 B per non-first sample; offsets delta is raw-size neutral.
+    expect = n * bpv + (V * (F - 1) * 2 if use_ndelta else 0)
+    assert len(buf) == expect, (len(buf), expect)
+    meta["delta"] = delta
     meta["compression"] = "gzip"
     with open(path, 'wb') as f:
         f.write(gzip.compress(bytes(buf)))
@@ -558,9 +668,13 @@ class OBJECT_OT_VATQuickExport(bpy.types.Operator):
                 return {'CANCELLED'}
             # format id: bump when the .bin layout changes so old files
             # fail loudly in the viewer instead of rendering garbage.
-            meta = {"format": "vat-storage/1",
-                    "basename": basename, "positionMode": vat.position_mode.lower(),
-                    "fps": context.scene.render.fps,
+            # (write_storage_buffer owns meta["format"]; sidecar fields
+            # here just seed positionMode/fps.)
+            meta = {"basename": basename, "positionMode": vat.position_mode.lower(),
+                    # Effective playback rate: baking with Step N keeps 1/Nth
+                    # of the frames, so the viewer must advance slower to
+                    # preserve duration (it also lerps between frames).
+                    "fps": context.scene.render.fps / max(context.scene.frame_step, 1),
                     "normalize": vat.normalize,
                     "minOffset": vat.min_offset, "maxOffset": vat.max_offset}
             meta["vertexCount"] = c['vertex_count']
@@ -571,6 +685,7 @@ class OBJECT_OT_VATQuickExport(bpy.types.Operator):
             write_storage_buffer(os.path.join(directory, basename + "_vat.bin"),
                                  os.path.join(directory, basename + "_vat.json"),
                                  c['offsets'], c['normals'], meta)
+            bin_path = os.path.join(directory, basename + "_vat.bin")
         pos = bpy.data.images.get("positions")
         nrm = bpy.data.images.get("normals")
         if vat.export_mode != 'STORAGE_BUFFER' and (not pos or not nrm):
@@ -596,7 +711,19 @@ class OBJECT_OT_VATQuickExport(bpy.types.Operator):
         for ob in src_objects:
             ob.select_set(True)
         context.view_layer.objects.active = src_active
-        self.report({'INFO'}, f"Quick Export -> {directory} {basename}.glb")
+        if vat.export_mode == 'STORAGE_BUFFER':
+            parts = [f"Quick Export -> {directory} {basename}_vat.bin"]
+            try:
+                parts.append(f".bin {format_bytes(os.path.getsize(bin_path))}")
+            except OSError:
+                pass
+            try:
+                parts.append(f".glb {format_bytes(os.path.getsize(os.path.join(directory, basename + '.glb')))}")
+            except OSError:
+                pass
+            self.report({'INFO'}, " / ".join(parts))
+        else:
+            self.report({'INFO'}, f"Quick Export -> {directory} {basename}.glb")
         return {'FINISHED'}
 
 
@@ -634,8 +761,21 @@ class VIEW3D_PT_VertexAnimation(bpy.types.Panel):
             col.prop(scene.vat_settings, "normal_precision", text="Normals")
             bpv = (OFFSET_FORMATS[scene.vat_settings.offset_precision]["bytes"]
                    + NORMAL_FORMATS[scene.vat_settings.normal_precision]["bytes"])
-            est = bpv * len(obj.data.vertices) * len(frame_range(scene))
-            col.label(text=f"Est: ~{format_bytes(est)} raw (gzip shrinks further)")
+            # Rough pre-bake estimate: evaluated (not base) verts at the
+            # current frame x UI frame range. The bake may exceed it when
+            # topology grows across frames (rows pad to the largest frame).
+            eval_verts = count_selected_eval_verts(context)
+            nframes = len(frame_range(scene))
+            col.label(text=f"Est: ~{format_bytes(bpv * eval_verts * nframes)} raw "
+                           f"({eval_verts:,} verts x {nframes} frames, current frame)")
+            if scene.frame_step > 1:
+                col.label(text=f"Playback: {scene.render.fps / scene.frame_step:g} fps "
+                               f"(smooth-lerped in viewer)")
+            if _storage_cache.get('vertex_count') and _storage_cache.get('frame_count'):
+                vc = _storage_cache['vertex_count']
+                fc = _storage_cache['frame_count']
+                col.label(text=f"Baked: {vc:,} verts x {fc} frames = "
+                               f"~{format_bytes(vc * fc * bpv)} raw")
         else:
             # Texture-only controls: no image is baked in Storage mode,
             # so flip/normalize/wrap have no effect there.
