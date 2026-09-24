@@ -16,9 +16,11 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { EXRLoader } from 'three/addons/loaders/EXRLoader.js'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { createVatMaterial, syncVatUniforms } from './vat-material.js'
+import { createVatStorageMaterial, loadVatStorage } from './vat-storage.js'
 import { buildPreview } from './vat-preview.js'
 
 const params = {
+  backend: 'texture',
   frames: 30,
   numWraps: 1,
   texHeight: 30,
@@ -34,7 +36,7 @@ const params = {
   time: 0,
 }
 
-const sources = { mesh: '', positions: '', normals: '' }
+const sources = { mesh: '', positions: '', normals: '', storage: '', storageMeta: '' }
 let EXAMPLES = []
 let preview = null
 let lastPosTex = null
@@ -104,41 +106,78 @@ async function reloadVat({ frameCamera }) {
   overlayText.classList.remove('error')
   overlayText.textContent = 'Loading VAT assets…'
   try {
-    const [gltf, positions, normals] = await Promise.all([
-      new GLTFLoader().loadAsync(sources.mesh),
-      loadTexture(sources.positions, { flipY: false }),
-      loadTexture(sources.normals, { flipY: true }),
-    ])
-
+    const gltf = await new GLTFLoader().loadAsync(sources.mesh)
     const nextMesh = gltf.scene.children.find((child) => child.isMesh)
     if (!nextMesh) throw new Error('No mesh found in the GLB')
-    if (!nextMesh.geometry.getAttribute('uv1') && !nextMesh.geometry.getAttribute('uv')) {
-      throw new Error('Mesh has no UVs (vertex_anim expected as second UV set)')
-    }
 
     if (vatRoot) scene.remove(vatRoot)
     if (vat) {
-      vat.uniforms.posTexture.value.dispose()
-      vat.uniforms.normalTexture.value.dispose()
+      vat.uniforms.posTexture?.value.dispose()
+      vat.uniforms.normalTexture?.value.dispose()
       vat.material.dispose()
     }
-    const texW = positions.image.width
-    const texH = positions.image.height
-    params.texHeight = texH
-vat = createVatMaterial({ positionTexture: positions, normalTexture: normals, params })
+    const verts = nextMesh.geometry.getAttribute('position').count
+    params.time = 0
+
+    if (params.backend === 'storage') {
+      if (!sources.storage || !sources.storageMeta) throw new Error('Drop a _vat.bin + _vat.json below (slots 04/05)')
+      const { meta, offsets, normals } = await loadVatStorage(sources.storage, sources.storageMeta)
+      // Bake ids ride on uv1.x (u = (i+0.5)/V): every split copy of vertex i
+      // shares it. If the .bin/.glb come from different bakes the fractions
+      // scatter and vertices sample random rows -> spike check, warn loudly.
+      const uv1 = nextMesh.geometry.getAttribute('uv1')
+      if (!uv1) throw new Error('Mesh has no second UV set (vertex_anim carries the bake ids: re-export the .glb)')
+      // ids must be exactly {0..V-1} (splits duplicate, never invent):
+      // wrong vertex count -> fractions scatter; wrap layout -> aliasing.
+      const seen = new Set()
+      let badIds = 0
+      for (let i = 0; i < uv1.count; i++) {
+        const scaled = uv1.getX(i) * meta.vertexCount
+        if (Math.abs((scaled % 1) - 0.5) > 0.02) badIds++
+        else seen.add(Math.round(scaled - 0.5))
+      }
+      var uvWarn = ''
+      if (badIds > 0 || seen.size !== meta.vertexCount) {
+        uvWarn = `BIN/GLB mismatch: ${badIds} off-grid + ${seen.size}/${meta.vertexCount} ids (re-bake + re-export together)`
+        console.warn(uvWarn)
+      }
+      Object.assign(params, {
+        frames: meta.frameCount,
+        fps: meta.fps ?? params.fps,
+        numWraps: 1,
+        positionMode: meta.positionMode ?? 'offsets',
+        normalize: meta.normalize ?? false,
+        minOffset: meta.minOffset ?? 0,
+        maxOffset: meta.maxOffset ?? 1,
+      })
+      vat = createVatStorageMaterial({ offsets, normals, meta })
+      lastPosTex = lastNrmTex = null
+      preview = null
+      syncPanelInputs()
+      setStatus([`storage ${verts} verts x ${params.frames} frames (.bin)`, ...(uvWarn ? [`⚠ ${uvWarn}`] : [])])
+    } else {
+      if (!nextMesh.geometry.getAttribute('uv1') && !nextMesh.geometry.getAttribute('uv')) {
+        throw new Error('Mesh has no UVs (vertex_anim expected as second UV set)')
+      }
+      const [positions, normals] = await Promise.all([
+        loadTexture(sources.positions, { flipY: false }),
+        loadTexture(sources.normals, { flipY: true }),
+      ])
+      const texW = positions.image.width
+      const texH = positions.image.height
+      params.texHeight = texH
+      vat = createVatMaterial({ positionTexture: positions, normalTexture: normals, params })
+      syncVatUniforms(vat.uniforms, params)
+      syncPanelInputs()
+      setStatus([`${params.wrapMode} ${texW}x${texH} | verts ${verts} | frames ${params.frames} x ${params.numWraps} wraps`])
+      lastPosTex = positions
+      lastNrmTex = normals
+      refreshPreview()
+    }
     nextMesh.material = vat.material
     vatMesh = nextMesh
     vatRoot = gltf.scene
     scene.add(vatRoot)
-
-    const verts = nextMesh.geometry.getAttribute('position').count
-    params.time = 0
-    syncVatUniforms(vat.uniforms, params)
-    syncPanelInputs()
-    setStatus([`${params.wrapMode} ${texW}x${texH} | verts ${verts} | frames ${params.frames} x ${params.numWraps} wraps`])
-    lastPosTex = positions
-    lastNrmTex = normals
-    refreshPreview()
 
     if (frameCamera) frameMeshCamera()
     overlay.hidden = true
@@ -165,8 +204,11 @@ function refreshPreview() {
 
 function applyExample(ex) {
   sources.mesh = ex.mesh
-  sources.positions = ex.positions
-  sources.normals = ex.normals
+  sources.positions = ex.positions ?? ''
+  sources.normals = ex.normals ?? ''
+  sources.storage = ex.storage ?? ''
+  sources.storageMeta = ex.storageMeta ?? ''
+  params.backend = ex.storage ? 'storage' : 'texture'
   Object.assign(params, {
     frames: ex.frames,
     numWraps: ex.numWraps,
@@ -179,7 +221,7 @@ function applyExample(ex) {
     time: 0,
   })
   for (const [slot, url] of Object.entries(sources)) {
-    document.querySelector(`[data-slot-label="${slot}"]`).textContent = url.split('/').pop()
+    document.querySelector(`[data-slot-label="${slot}"]`).textContent = url ? url.split('/').pop() : '—'
   }
 }
 
@@ -256,7 +298,13 @@ for (const input of panelInputs) {
       params.numWraps = params.wrapMode === 'none' ? 1 : Math.max(1, Math.round(params.texHeight / params.frames))
       refreshPreview()
     }
-    if (key === "texFilter" && vat) {
+    if (params.backend === 'storage' && vat && (key === 'positionMode' || key === 'normalize' || key === 'minOffset' || key === 'maxOffset')) {
+      vat.uniforms.isOffsets.value = params.positionMode === 'offsets'
+      vat.uniforms.denormalize.value = params.normalize
+      vat.uniforms.minOffset.value = params.minOffset
+      vat.uniforms.maxOffset.value = params.maxOffset
+    }
+    if ((key === "texFilter" || key === "backend") && vat) {
       reloadVat({ frameCamera: false }).catch(() => {})
     }
     if (vat) syncVatUniforms(vat.uniforms, params)

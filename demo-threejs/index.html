@@ -29,11 +29,27 @@
           <span class="slot-file" data-slot-label="normals">normals.png</span>
           <input type="file" accept=".png" hidden />
         </div>
+        <div class="slot" data-slot="storage" role="button" tabindex="0">
+          <span class="slot-name">04 — VAT BIN [.BIN]</span>
+          <span class="slot-file" data-slot-label="storage">—</span>
+          <input type="file" accept=".bin" hidden />
+        </div>
+        <div class="slot" data-slot="storageMeta" role="button" tabindex="0">
+          <span class="slot-name">05 — VAT META [.JSON]</span>
+          <span class="slot-file" data-slot-label="storageMeta">—</span>
+          <input type="file" accept=".json" hidden />
+        </div>
         <pre id="status">Loading…</pre>
       </section>
 
       <section>
         <h2>02 / BAKE</h2>
+        <label class="row"><span>SOURCE</span>
+          <select data-param="backend">
+            <option value="texture" selected>vat texture</option>
+            <option value="storage">storage buffer</option>
+          </select>
+        </label>
         <label class="row"><span>WRAP</span>
           <select data-param="wrapMode">
             <option value="none">none</option>

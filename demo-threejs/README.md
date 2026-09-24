@@ -2,9 +2,15 @@
 
 **Live demo: https://vat.residenceprincipale.net/**
 
-Viewer for NONE / WRAP / WRAP_CROP plugin exports. Ships with bundled examples
-(`public/examples.json` + `public/examples/<id>/<mode>/`, baked OFFSETS,
-flip_Y ON, 30 frames) switchable from the EXAMPLE + WRAP selects.
+Viewer for VAT Texture (NONE / WRAP / WRAP_CROP) and Storage Buffer
+(`buffer<storage>`) plugin exports. Ships with bundled examples
+(`public/examples.json` + `public/examples/<id>/`, baked OFFSETS,
+flip_Y ON, 60 frames; `<id>_storage/` holds the `.glb` + `_vat.bin` +
+`_vat.json` variant) switchable from the EXAMPLE select and the SOURCE
+toggle. Re-bake storage examples with
+`blender-examples/export_storage_examples.py` (batches via
+`/tmp/vat_batch.json`, manifest accumulates in
+`/tmp/vat_storage_manifest.json`).
 Section 04 shows a realtime preview of both textures in bake-row order with
 the sampled rows as playhead lines (`frame · mem rows […]`). Drop a bake in,
 tune the params live.
