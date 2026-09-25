@@ -46,3 +46,5 @@ for the row derivation from `VAT/__init__.py`). It builds on
 a directional sun, a hemisphere fill, and a room environment. Normals are
 decoded (`*2-1`, `.xzy` swizzle like positions) into `objectNormal`, letting
 three's standard lighting pipeline do the rest.
+
+Icons: inline SVGs from [Lucide](https://lucide.dev) (ISC), sources kept in `src/icons/`.

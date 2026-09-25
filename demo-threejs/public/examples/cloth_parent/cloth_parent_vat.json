@@ -1,7 +1,7 @@
 {
   "basename": "cloth_parent",
   "positionMode": "offsets",
-  "fps": 15.0,
+  "fps": 30,
   "normalize": false,
   "minOffset": -0.8237671852111816,
   "maxOffset": 2.1166913509368896,
@@ -17,5 +17,6 @@
     "offsets": true,
     "normals": true
   },
-  "compression": "gzip"
+  "compression": "gzip",
+  "frameStep": 2
 }

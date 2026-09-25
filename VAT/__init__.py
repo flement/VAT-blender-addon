@@ -671,10 +671,11 @@ class OBJECT_OT_VATQuickExport(bpy.types.Operator):
             # (write_storage_buffer owns meta["format"]; sidecar fields
             # here just seed positionMode/fps.)
             meta = {"basename": basename, "positionMode": vat.position_mode.lower(),
-                    # Effective playback rate: baking with Step N keeps 1/Nth
-                    # of the frames, so the viewer must advance slower to
-                    # preserve duration (it also lerps between frames).
-                    "fps": context.scene.render.fps / max(context.scene.frame_step, 1),
+                    # fps stays the render rate; frameStep tells the viewer
+                    # the export stride so it plays at fps/step (same
+                    # duration) and samples the matching grid.
+                    "fps": context.scene.render.fps,
+                    "frameStep": max(context.scene.frame_step, 1),
                     "normalize": vat.normalize,
                     "minOffset": vat.min_offset, "maxOffset": vat.max_offset}
             meta["vertexCount"] = c['vertex_count']
@@ -770,7 +771,7 @@ class VIEW3D_PT_VertexAnimation(bpy.types.Panel):
                            f"({eval_verts:,} verts x {nframes} frames, current frame)")
             if scene.frame_step > 1:
                 col.label(text=f"Playback: {scene.render.fps / scene.frame_step:g} fps "
-                               f"(smooth-lerped in viewer)")
+                               f"(step {scene.frame_step}, smooth-lerped in viewer)")
             if _storage_cache.get('vertex_count') and _storage_cache.get('frame_count'):
                 vc = _storage_cache['vertex_count']
                 fc = _storage_cache['frame_count']

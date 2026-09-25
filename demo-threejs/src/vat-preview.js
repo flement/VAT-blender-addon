@@ -114,3 +114,83 @@ export function buildPreview({
   update(0);
   return { update };
 }
+
+// 2D preview of decoded storage buffers (.bin): bake-memory row order
+// (top = mem row 0, which holds the LAST frame — frames are stored
+// reversed, like the texture path). The playhead marks the mem row the
+// shader samples at frame f: m = F-1-f. Columns = vertices strided to
+// fit. Offsets normalized by the meta range, normals mapped from [-1, 1].
+// Same { update } contract as buildPreview.
+export function buildStoragePreview({
+  offsets,
+  normals,
+  meta,
+  posCanvas,
+  nrmCanvas,
+  posDims,
+  nrmDims,
+  statusEl,
+}) {
+  const V = meta.vertexCount;
+  const F = meta.frameCount;
+  const stride = Math.max(1, Math.ceil(V / 1024));
+  const W = Math.ceil(V / stride);
+  const span = meta.maxOffset - meta.minOffset || 1;
+  let lastFrame = -1;
+
+  function paintArrays(src, isNormal) {
+    const off = document.createElement("canvas");
+    off.width = W;
+    off.height = F;
+    const ctx = off.getContext("2d");
+    const img = ctx.createImageData(W, F);
+    for (let f = 0; f < F; f++) {
+      for (let x = 0; x < W; x++) {
+        const v = Math.min(x * stride, V - 1);
+        const si = (f * V + v) * 4;
+        const di = (f * W + x) * 4;
+        for (let c = 0; c < 3; c++) {
+          const t = isNormal ? src[si + c] * 0.5 + 0.5 : (src[si + c] - meta.minOffset) / span;
+          img.data[di + c] = Math.max(0, Math.min(255, Math.round(t * 255)));
+        }
+        img.data[di + 3] = 255;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+    return off;
+  }
+
+  const posOff = paintArrays(offsets, false);
+  const nrmOff = paintArrays(normals, true);
+  posCanvas.width = W;
+  posCanvas.height = F;
+  nrmCanvas.width = W;
+  nrmCanvas.height = F;
+  posDims.textContent = `${V}v x ${F}f`;
+  nrmDims.textContent = `${V}v x ${F}f`;
+
+  function paint(canvas, off, fi) {
+    const ctx = canvas.getContext("2d");
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(off, 0, 0);
+    ctx.strokeStyle = "#fff";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, fi + 0.5);
+    ctx.lineTo(canvas.width, fi + 0.5);
+    ctx.stroke();
+  }
+
+  function update(f) {
+    const fi = ((Math.floor(f) % F) + F) % F;
+    if (fi === lastFrame) return;
+    lastFrame = fi;
+    paint(posCanvas, posOff, F - 1 - fi);
+    paint(nrmCanvas, nrmOff, F - 1 - fi);
+    statusEl.textContent =
+      `frame ${fi} · mem row ${F - 1 - fi} · ${V} verts x ${F} frames · offsets [${meta.minOffset.toFixed(3)}, ${meta.maxOffset.toFixed(3)}]`;
+  }
+
+  update(0);
+  return { update };
+}

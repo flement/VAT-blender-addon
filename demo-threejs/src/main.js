@@ -17,7 +17,7 @@ import { EXRLoader } from 'three/addons/loaders/EXRLoader.js'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { createVatMaterial, syncVatUniforms } from './vat-material.js'
 import { createVatStorageMaterial, loadVatStorage, syncVatStorageUniforms } from './vat-storage.js'
-import { buildPreview } from './vat-preview.js'
+import { buildPreview, buildStoragePreview } from './vat-preview.js'
 
 const params = {
   backend: 'texture',
@@ -48,6 +48,11 @@ const overlay = document.querySelector('#overlay')
 const overlayText = document.querySelector('#overlay-text')
 const statusBox = document.querySelector('#status')
 const frameReadout = document.querySelector('#frame-readout')
+const timeReadout = document.querySelector('#time-readout')
+const btnPlay = document.querySelector('#btn-play')
+const btnReverse = document.querySelector('#btn-reverse')
+const icoPlay = btnPlay.querySelector('[data-icon="play"]')
+const icoPause = btnPlay.querySelector('[data-icon="pause"]')
 const exampleSelect = document.querySelector('#example-select')
 
 const renderer = new WebGPURenderer({ antialias: true })
@@ -82,11 +87,42 @@ let storageSummary = ''
 
 function storagePlaybackSuffix() {
   if (params.backend !== 'storage' || !vat) return ''
-  return ` | step x${params.step}${params.smooth ? ' smooth' : ''}`
+  return ` | step x${params.step}${params.smooth ? ' smooth' : ''} = ${parseFloat(effFps().toFixed(2))} fps`
 }
 
 function setStatus(lines) {
   statusBox.textContent = lines.join('\n')
+}
+
+// Human file weights in the asset slots (decimal MB, like the Blender panel).
+function fmtSize(n) {
+  n = Number(n)
+  if (!Number.isFinite(n) || n < 0) return ''
+  const units = ['B', 'KB', 'MB', 'GB']
+  let u = 0
+  while (n >= 1000 && u < units.length - 1) { n /= 1000; u++ }
+  return u === 0 ? `${Math.round(n)} B` : `${n.toFixed(1)} ${units[u]}`
+}
+
+function setSlotLabel(slot, name, size) {
+  document.querySelector(`[data-slot-label="${slot}"]`).textContent =
+    size != null ? `${name} · ${fmtSize(size)}` : name
+}
+
+// Fill in remote (example) file weights via HEAD; blobs already carry
+// their size from the drop handler. Silent fallback to bare names.
+async function refreshSlotSizes() {
+  for (const [slot, url] of Object.entries(sources)) {
+    if (!url || url.startsWith('blob:')) continue
+    const name = decodeURIComponent(url.split('/').pop())
+    try {
+      const head = await fetch(url, { method: 'HEAD' })
+      const len = Number(head.headers.get('content-length'))
+      setSlotLabel(slot, name, Number.isFinite(len) && len >= 0 ? len : null)
+    } catch {
+      setSlotLabel(slot, name, null)
+    }
+  }
 }
 
 function showError(message) {
@@ -106,7 +142,13 @@ async function loadTexture(url, { flipY }) {
 }
 
 function frameDuration() {
-  return params.frames / params.fps
+  return params.frames / effFps()
+}
+
+// Effective playback rate: STEP is the export stride, so the viewer
+// advances at base fps / step (same duration as a full-rate bake).
+function effFps() {
+  return params.fps / Math.max(1, params.step)
 }
 
 async function reloadVat({ frameCamera }) {
@@ -152,6 +194,7 @@ async function reloadVat({ frameCamera }) {
       Object.assign(params, {
         frames: meta.frameCount,
         fps: meta.fps ?? params.fps,
+        step: meta.frameStep ?? 1,
         numWraps: 1,
         positionMode: meta.positionMode ?? 'offsets',
         normalize: meta.normalize ?? false,
@@ -160,7 +203,16 @@ async function reloadVat({ frameCamera }) {
       })
       vat = createVatStorageMaterial({ offsets, normals, meta, params })
       lastPosTex = lastNrmTex = null
-      preview = null
+      preview = buildStoragePreview({
+        offsets: offsets.array,
+        normals: normals.array,
+        meta,
+        posCanvas: document.querySelector('#preview-pos'),
+        nrmCanvas: document.querySelector('#preview-nrm'),
+        posDims: document.querySelector('#preview-pos-dims'),
+        nrmDims: document.querySelector('#preview-nrm-dims'),
+        statusEl: document.querySelector('#preview-status'),
+      })
       syncPanelInputs()
       storageSummary = `storage ${verts} verts x ${params.frames} frames (.bin)`
       setStatus([storageSummary + storagePlaybackSuffix(), ...(uvWarn ? [`⚠ ${uvWarn}`] : [])])
@@ -190,6 +242,7 @@ async function reloadVat({ frameCamera }) {
 
     if (frameCamera) frameMeshCamera()
     overlay.hidden = true
+    refreshSlotSizes().catch(() => {})
   } catch (error) {
     showError(`Could not load VAT assets: ${error.message}`)
     throw error
@@ -230,7 +283,7 @@ function applyExample(ex) {
     time: 0,
   })
   for (const [slot, url] of Object.entries(sources)) {
-    document.querySelector(`[data-slot-label="${slot}"]`).textContent = url ? url.split('/').pop() : '—'
+    setSlotLabel(slot, url ? decodeURIComponent(url.split('/').pop()) : '—', null)
   }
 }
 
@@ -274,7 +327,7 @@ function tickPlayback(dt) {
   if (params.playing) params.time += dt * (params.reverse ? -1 : 1)
   const total = frameDuration()
   params.time = ((params.time % total) + total) % total
-  if (vat) vat.uniforms.frame.value = params.time * params.fps
+  if (vat) vat.uniforms.frame.value = params.time * effFps()
 }
 
 // --- Left panel bindings: every input writes params, syncs uniforms, refreshes ranges.
@@ -287,9 +340,10 @@ function syncPanelInputs() {
     else if (input.tagName === 'SELECT') input.value = params[key]
     else input.value = params[key]
     if (key === 'time') input.max = frameDuration()
-    // STEP/SMOOTH only drive the storage shader (textures already have
-    // TEX_FILTER linear/nearest for the same hold-vs-lerp choice).
-    if (key === 'step' || key === 'smooth') input.disabled = params.backend !== 'storage'
+    // Backend-scoped rows: storage hides texture-only bake params and
+    // vice versa (textures already lerp via TEX_FILTER).
+    const scoped = input.closest('[data-backends]')
+    if (scoped) scoped.hidden = !scoped.dataset.backends.split(' ').includes(params.backend)
   }
 }
 
@@ -316,7 +370,7 @@ for (const input of panelInputs) {
         || key === 'step' || key === 'smooth') {
         syncVatStorageUniforms(vat.uniforms, params)
       }
-      if (key === 'step' || key === 'smooth') setStatus([storageSummary + storagePlaybackSuffix()])
+      if (key === 'step' || key === 'smooth' || key === 'fps') setStatus([storageSummary + storagePlaybackSuffix()])
     }
     if ((key === "texFilter" || key === "backend") && vat) {
       reloadVat({ frameCamera: false }).catch(() => {})
@@ -329,17 +383,94 @@ for (const input of panelInputs) {
 document.querySelector('#btn-frame-mesh').addEventListener('click', frameMeshCamera)
 document.querySelector('#btn-reload').addEventListener('click', () => reloadVat({ frameCamera: false }))
 
+// --- Bottom timeline transport (Blender-like) ---
+function stepFrame(dir) {
+  const total = frameDuration()
+  params.time = (((params.time + dir / effFps()) % total) + total) % total
+  if (vat) vat.uniforms.frame.value = params.time * effFps()
+}
+btnPlay.addEventListener('click', () => { params.playing = !params.playing })
+btnReverse.addEventListener('click', () => { params.reverse = !params.reverse })
+document.querySelector('#btn-prev').addEventListener('click', () => stepFrame(-1))
+document.querySelector('#btn-next').addEventListener('click', () => stepFrame(1))
+addEventListener('keydown', (e) => {
+  if (e.code === 'Space' && !/INPUT|SELECT|TEXTAREA|BUTTON/.test(document.activeElement?.tagName ?? '')) {
+    e.preventDefault()
+    params.playing = !params.playing
+  }
+})
+
+// --- Resizable left panel (width persists across visits) ---
+const panelResize = document.querySelector('#panel-resize')
+try {
+  const savedW = Number(localStorage.getItem('vat-panel-w'))
+  if (savedW >= 220 && savedW <= 560) {
+    document.documentElement.style.setProperty('--panel-w', `${savedW}px`)
+  }
+} catch { /* private mode: fixed width */ }
+panelResize.addEventListener('pointerdown', (e) => {
+  e.preventDefault()
+  panelResize.classList.add('drag')
+  panelResize.setPointerCapture(e.pointerId)
+  const move = (ev) => {
+    const w = Math.min(560, Math.max(220, ev.clientX))
+    document.documentElement.style.setProperty('--panel-w', `${w}px`)
+  }
+  const up = () => {
+    panelResize.classList.remove('drag')
+    panelResize.removeEventListener('pointermove', move)
+    panelResize.removeEventListener('pointerup', up)
+    try {
+      const w = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--panel-w'), 10)
+      localStorage.setItem('vat-panel-w', String(w))
+    } catch { /* ignore */ }
+  }
+  panelResize.addEventListener('pointermove', move)
+  panelResize.addEventListener('pointerup', up)
+})
+
 // --- Responsive: off-canvas panel toggle (visible on <=768px via CSS) ---
 const panel = document.querySelector('#panel')
 document.querySelector('#panel-toggle').addEventListener('click', () => panel.classList.toggle('open'))
 const texpreview = document.querySelector('#texpreview')
 document.querySelector('#texpreview-toggle').addEventListener('click', () => texpreview.classList.toggle('open'))
 
+// --- Resizable texture preview (width persists across visits) ---
+const texResize = document.querySelector('#texpreview-resize')
+try {
+  const savedT = Number(localStorage.getItem('vat-texpw'))
+  if (savedT >= 140 && savedT <= 520) {
+    document.documentElement.style.setProperty('--texpw', `${savedT}px`)
+  }
+} catch { /* private mode: fixed width */ }
+texResize.addEventListener('pointerdown', (e) => {
+  e.preventDefault()
+  texResize.classList.add('drag')
+  texResize.setPointerCapture(e.pointerId)
+  const startX = e.clientX
+  const startW = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--texpw'), 10) || 200
+  const move = (ev) => {
+    const w = Math.min(520, Math.max(140, startW + (startX - ev.clientX)))
+    document.documentElement.style.setProperty('--texpw', `${w}px`)
+  }
+  const up = () => {
+    texResize.classList.remove('drag')
+    texResize.removeEventListener('pointermove', move)
+    texResize.removeEventListener('pointerup', up)
+    try {
+      const w = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--texpw'), 10)
+      localStorage.setItem('vat-texpw', String(w))
+    } catch { /* ignore */ }
+  }
+  texResize.addEventListener('pointermove', move)
+  texResize.addEventListener('pointerup', up)
+})
+
 // --- Drag & drop + file pickers ---
 function setSource(slot, file) {
   if (sources[slot]?.startsWith('blob:')) URL.revokeObjectURL(sources[slot])
   sources[slot] = URL.createObjectURL(file)
-  document.querySelector(`[data-slot-label="${slot}"]`).textContent = file.name
+  setSlotLabel(slot, file.name, file.size)
   reloadVat({ frameCamera: slot === 'mesh' }).catch(() => {})
 }
 
@@ -377,7 +508,13 @@ renderer.setAnimationLoop(timestamp => {
   const timeInput = panelInputs.find((input) => input.dataset.param === 'time')
   if (document.activeElement !== timeInput) timeInput.value = params.time
   const frameIndex = vat ? ((Math.floor(vat.uniforms.frame.value) % params.frames) + params.frames) % params.frames : 0
-  frameReadout.textContent = vat ? String(frameIndex) : '–'
+  frameReadout.textContent = vat
+    ? `${String(frameIndex).padStart(String(params.frames).length, '0')} / ${params.frames}`
+    : '–'
+  timeReadout.textContent = vat ? `${params.time.toFixed(2)}s / ${frameDuration().toFixed(2)}s` : '–'
+  icoPlay.hidden = params.playing
+  icoPause.hidden = !params.playing
+  btnReverse.classList.toggle('on', params.reverse)
   if (preview && vat) preview.update(frameIndex)
   controls.update()
   renderer.render(scene, camera)
@@ -390,9 +527,9 @@ bootExamples()
     // ?frame=N deep-links a paused frame (testing / sharing).
     const f = new URLSearchParams(location.search).get('frame')
     if (f !== null && vat) {
-      params.time = Math.max(0, Number(f) || 0) / params.fps
+      params.time = Math.max(0, Number(f) || 0) / effFps()
       params.playing = false
-      vat.uniforms.frame.value = params.time * params.fps
+      vat.uniforms.frame.value = params.time * effFps()
       syncPanelInputs()
     }
   })

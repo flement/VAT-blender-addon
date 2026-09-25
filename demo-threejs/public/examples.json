@@ -419,7 +419,7 @@
     },
     {
       "id": "cloth_storage",
-      "label": "VAT_Cloth — 100v (storage)",
+      "label": "VAT_Cloth \u2014 100v (storage)",
       "mesh": "/examples/cloth_storage/cloth_storage.glb",
       "storage": "/examples/cloth_storage/cloth_storage_vat.bin",
       "storageMeta": "/examples/cloth_storage/cloth_storage_vat.json",
@@ -433,7 +433,7 @@
     },
     {
       "id": "cloth_parent",
-      "label": "Cloth Parent — 50k v (storage)",
+      "label": "Cloth Parent \u2014 50k v (storage)",
       "mesh": "/examples/cloth_parent/cloth_parent.glb",
       "storage": "/examples/cloth_parent/cloth_parent_vat.bin",
       "storageMeta": "/examples/cloth_parent/cloth_parent_vat.json",
@@ -443,7 +443,7 @@
       "normalize": false,
       "minOffset": 0,
       "maxOffset": 1,
-      "fps": 15
+      "fps": 30
     },
     {
       "id": "correctivesmooth_storage",
