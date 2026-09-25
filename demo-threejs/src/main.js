@@ -443,11 +443,37 @@ btnPlay.addEventListener('click', () => { params.playing = !params.playing })
 btnReverse.addEventListener('click', () => { params.reverse = !params.reverse })
 document.querySelector('#btn-prev').addEventListener('click', () => stepFrame(-1))
 document.querySelector('#btn-next').addEventListener('click', () => stepFrame(1))
+// --- Keyboard shortcuts (ignored when typing in a field) ---
+// space play/pause · ←/→ step frame · shift+←/→ ±10f · home/end first/last
+// R reverse · F frame mesh · L reload · H panel · T textures
+function togglePlay() { params.playing = !params.playing }
+const mqMobile = matchMedia('(max-width: 768px)')
+function togglePanel() {
+  if (mqMobile.matches) document.querySelector('#panel').classList.toggle('open')
+  else document.body.classList.toggle('hide-panel')
+}
+function toggleTexpreview() {
+  if (mqMobile.matches) document.querySelector('#texpreview').classList.toggle('open')
+  else document.body.classList.toggle('hide-tex')
+}
 addEventListener('keydown', (e) => {
-  if (e.code === 'Space' && !/INPUT|SELECT|TEXTAREA|BUTTON/.test(document.activeElement?.tagName ?? '')) {
+  if (/INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName ?? '')) return
+  if (e.metaKey || e.ctrlKey || e.altKey) return
+  const k = e.key
+  if (e.code === 'Space') { e.preventDefault(); togglePlay() }
+  else if (k === 'ArrowLeft' || k === 'ArrowRight') {
     e.preventDefault()
-    params.playing = !params.playing
+    stepFrame((k === 'ArrowRight' ? 1 : -1) * (e.shiftKey ? 10 : 1))
   }
+  else if (k === 'Home') { e.preventDefault(); params.time = 0 }
+  else if (k === 'End') { e.preventDefault(); params.time = frameDuration() - 1 / effFps() }
+  else if (k === 'r' || k === 'R') params.reverse = !params.reverse
+  else if (k === 'f' || k === 'F') frameMeshCamera()
+  else if (k === 'l' || k === 'L') reloadVat({ frameCamera: false }).catch(() => {})
+  else if (k === 'h' || k === 'H') togglePanel()
+  else if (k === 't' || k === 'T') toggleTexpreview()
+  else return
+  syncPanelInputs()
 })
 
 // --- Resizable left panel (width persists across visits) ---
@@ -481,9 +507,12 @@ panelResize.addEventListener('pointerdown', (e) => {
 
 // --- Responsive: off-canvas panel toggle (visible on <=768px via CSS) ---
 const panel = document.querySelector('#panel')
-document.querySelector('#panel-toggle').addEventListener('click', () => panel.classList.toggle('open'))
+document.querySelector('#panel-toggle').addEventListener('click', togglePanel)
 const texpreview = document.querySelector('#texpreview')
-document.querySelector('#texpreview-toggle').addEventListener('click', () => texpreview.classList.toggle('open'))
+document.querySelector('#texpreview-toggle').addEventListener('click', toggleTexpreview)
+// In-panel H / T buttons: same action as the keyboard shortcuts.
+document.querySelector('#btn-hide-panel').addEventListener('click', togglePanel)
+document.querySelector('#btn-hide-tex').addEventListener('click', toggleTexpreview)
 
 // --- Resizable texture preview (width persists across visits) ---
 const texResize = document.querySelector('#texpreview-resize')

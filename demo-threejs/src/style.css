@@ -335,18 +335,18 @@ label.row[hidden],
 .slot-clear {
   align-items: center;
   justify-content: center;
-  width: 14px;
-  height: 14px;
+  width: 18px;
+  height: 18px;
   padding: 0;
   flex: none;
   background: transparent;
   color: black;
   border: 1px solid black;
   font: inherit;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1;
   cursor: pointer;
-  opacity: 0.35;
+  opacity: 0.6;
 }
 
 .slot-clear:hover {
@@ -424,6 +424,42 @@ label.row:hover .hint,
   text-decoration: underline;
 }
 
+/* Top-right close (×) buttons: hide panel [H] / textures [T].
+   Reopen via the hamburger / image toggle buttons. */
+.panel-top,
+.prev-top {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  z-index: 1;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.close-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  flex: none;
+  background: white;
+  color: black;
+  border: 1px solid black;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.6;
+}
+
+.close-btn:hover {
+  opacity: 1;
+  background: black;
+  color: white;
+}
+
 .overlay {
   position: fixed;
   inset: 0;
@@ -489,6 +525,31 @@ label.row:hover .hint,
 #texpreview-toggle svg {
   width: 20px;
   height: 20px;
+}
+
+/* --- Keyboard toggles (H panel, T textures): collapse on desktop --- */
+body.hide-panel #panel {
+  display: none;
+}
+
+body.hide-panel #timeline {
+  left: 0;
+}
+
+body.hide-tex #texpreview {
+  display: none;
+}
+
+/* Desktop: reuse the mobile toggle buttons to bring back a hidden
+   panel / preview (same look, same spot). */
+body.hide-panel #panel-toggle,
+body.hide-tex #texpreview-toggle {
+  display: inline-flex;
+}
+
+/* Keep the reopen button above the timeline, not on top of it. */
+body.hide-tex #texpreview-toggle {
+  bottom: 64px;
 }
 
 @media (max-width: 768px) {

@@ -20,6 +20,10 @@ Deep links (see `public/examples.json` for ids):
 `?frame=N` opens paused on frame N (0-based). Examples:
 `/?ex=twist` (Simple Deform), `/?ex=explode&frame=10`, `/?ex=wave`.
 
+Shortcuts: `space` play/pause, `←/→` step frame (`shift` = ±10),
+`home/end` first/last, `R` reverse, `F` frame mesh, `L` reload,
+`H` panel, `T` textures.
+
 Re-bake after scene changes: open `blender-examples/vat_test.blend` in Blender
 4.2+ with the VAT addon enabled and run `blender-examples/export_examples.py`
 (every `VAT_*` mesh → `<id>.glb` + `positions.exr` + `normals.png`).
