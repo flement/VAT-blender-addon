@@ -20,7 +20,7 @@
 
 
 bl_info = {
-    "name": "VAT",
+    "name": "Vertex Animation Toolkit",
     "author": "Joshua Bogart and Clément Renou",
     "version": (1, 0, 12),
     "blender": (4, 2, 0),
@@ -874,91 +874,119 @@ class VIEW3D_PT_VertexAnimation(bpy.types.Panel):
     bl_idname = "VIEW3D_PT_vertex_animation"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
-    bl_category = "VAT"
+    bl_category = "VAT Toolkit"
 
     def draw(self, context):
         layout = self.layout
-        obj = context.active_object
         layout.use_property_split = True
         layout.use_property_decorate = False
         scene = context.scene
+        vat = scene.vat_settings
+        obj = context.active_object
+        meshes = [o for o in context.selected_objects if o.type == 'MESH']
 
         if obj is None or obj.type != 'MESH':
-            layout.label(text="Select a mesh object")
+            layout.label(text="Select a mesh in Object mode", icon='ERROR')
             return
 
-        layout.label(text=f"Object To Encode: {obj.name}", icon='MOD_DATA_TRANSFER')
-        layout.label(text=f"Vertex Count: {len(obj.data.vertices)}, Frame Count: {len(frame_range(scene))}")
+        # ---- 0 · What will bake (live validation) ----
+        status = layout.box()
+        status.label(text=f"{obj.name}", icon='MESH_DATA')
+        nframes = len(frame_range(scene))
+        eval_verts = count_selected_eval_verts(context)
+        base_verts = sum(len(o.data.vertices) for o in meshes if o.data)
+        status.label(text=f"{eval_verts:,} verts (evaluated) x {nframes} frames")
+        if len(meshes) > 1:
+            status.label(text=f"{len(meshes)} meshes combined into one bake", icon='INFO')
+        if meshes and eval_verts != base_verts:
+            status.label(text="Modifiers change the count: bake uses evaluated", icon='INFO')
+        unbaked = [o.name for o in meshes for mod in o.modifiers
+                   if (mod.type == 'CLOTH' and not is_simulation_baked(o, 'CLOTH'))
+                   or (mod.type == 'PARTICLE_SYSTEM'
+                       and not is_simulation_baked(o, 'PARTICLE_SYSTEM'))]
+        for name in dict.fromkeys(unbaked):
+            status.label(text=f"{name}: simulation NOT baked", icon='ERROR')
+        if unbaked:
+            status.label(text="Cache > Bake All Dynamics first")
 
-        col = layout.column(align=True)
-
-        col.prop(scene, "frame_start", text="Frame Start")
-        col.prop(scene, "frame_end", text="End")
+        # ---- 1 · Animation range ----
+        box = layout.box()
+        box.label(text="1 · Range", icon='TIME')
+        col = box.column(align=True)
+        col.prop(scene, "frame_start", text="Start")
+        col.prop(scene, "frame_end", text="End (excluded)")
         col.prop(scene, "frame_step", text="Step")
-        col.prop(scene.vat_settings, "position_mode", text="Position Mode")
-        col.prop(scene.vat_settings, "export_mode", text="Export Mode")
-        if scene.vat_settings.export_mode == 'STORAGE_BUFFER':
-            col.prop(scene.vat_settings, "offset_precision", text="Offsets")
-            col.prop(scene.vat_settings, "normal_precision", text="Normals")
-            # Packed ints, not GPU floats: the viewer expands them
-            # CPU-side at load (three.js uploads the buffer as-is, so
-            # this decode is the price of small files, not a three.js
-            # requirement). Lower precision = smaller .bin, same decode.
-            col.label(text="Packed on disk, expanded to f32 at load.")
-            bpv = (OFFSET_FORMATS[scene.vat_settings.offset_precision]["bytes"]
-                   + NORMAL_FORMATS[scene.vat_settings.normal_precision]["bytes"])
+        if scene.frame_step > 1:
+            box.label(text=f"Plays at {scene.render.fps / scene.frame_step:g} fps")
+
+        # ---- 2 · Format (Track A = texture, Track B = storage) ----
+        box = layout.box()
+        if vat.export_mode == 'STORAGE_BUFFER':
+            box.label(text="2 · Format — Track B: Storage", icon='FILE_IMAGE')
+        else:
+            box.label(text="2 · Format — Track A: Texture", icon='FILE_IMAGE')
+        col = box.column(align=True)
+        col.prop(vat, "position_mode", text="Positions")
+        col.prop(vat, "export_mode", text="Backend")
+        if vat.export_mode == 'STORAGE_BUFFER':
+            col.prop(vat, "offset_precision", text="Offsets")
+            col.prop(vat, "normal_precision", text="Normals")
+            box.label(text="Packed on disk, expanded to f32 at load.")
+            bpv = (OFFSET_FORMATS[vat.offset_precision]["bytes"]
+                   + NORMAL_FORMATS[vat.normal_precision]["bytes"])
             # Rough pre-bake estimate: evaluated (not base) verts at the
             # current frame x UI frame range. The bake may exceed it when
             # topology grows across frames (rows pad to the largest frame).
-            eval_verts = count_selected_eval_verts(context)
-            nframes = len(frame_range(scene))
-            col.label(text=f"Est: ~{format_bytes(bpv * eval_verts * nframes)} raw "
-                           f"({eval_verts:,} verts x {nframes} frames, current frame)")
-            if scene.frame_step > 1:
-                col.label(text=f"Playback: {scene.render.fps / scene.frame_step:g} fps")
+            box.label(text=f"Est: ~{format_bytes(bpv * eval_verts * nframes)} raw "
+                           f"({eval_verts:,} verts x {nframes} frames)")
+            vram_bpv = 16 + (0 if vat.normal_precision == 'NONE' else 16)
+            box.label(text=f"VRAM after decode: ~{format_bytes(vram_bpv * eval_verts * nframes)}")
         else:
             # Texture-only controls: no image is baked in Storage mode,
             # so flip/normalize/wrap have no effect there.
-            col.prop(scene.vat_settings, "flip_y", text="Flip Y")
-            col.prop(scene.vat_settings, "normalize", text="Normalize (useful for png)")
-            if scene.vat_settings.normalize:
-                col.label(text=f"Min Offset: {scene.vat_settings.min_offset:.4f}")
-                col.label(text=f"Max Offset: {scene.vat_settings.max_offset:.4f}")
-            col.prop(scene.vat_settings, "wrap_mode", text="Wrap Mode")
-            if scene.vat_settings.wrap_mode != 'NONE':
-                optimal_width, optimal_height, num_wraps = calculate_optimal_vat_resolution(len(obj.data.vertices), len(frame_range(scene)))
-                y_percent_used = len(frame_range(scene)) * num_wraps / optimal_height
-                if scene.vat_settings.wrap_mode == 'WRAP':
-                    col.label(text=f"Output Size: {optimal_width} x {optimal_height}")
-                    col.label(text=f"Y Used: {y_percent_used}")
+            col.prop(vat, "flip_y", text="Flip Y")
+            col.prop(vat, "normalize", text="Normalize (for PNG)")
+            if vat.normalize:
+                box.label(text=f"Min: {vat.min_offset:.4f}  Max: {vat.max_offset:.4f}")
+            col.prop(vat, "wrap_mode", text="Wrap")
+            if vat.wrap_mode != 'NONE':
+                optimal_width, optimal_height, num_wraps = calculate_optimal_vat_resolution(
+                    len(obj.data.vertices), nframes)
+                if vat.wrap_mode == 'WRAP':
+                    box.label(text=f"Output: {optimal_width} x {optimal_height} "
+                                   f"({nframes * num_wraps / optimal_height:.0%} used)")
                 else:
-                    col.label(text=f"Output Size: {optimal_width} x {len(frame_range(scene)) * num_wraps}")
-                col.label(text=f"Num Wraps: {num_wraps}")
-        row = layout.row()
-        row.operator("object.prepare_explode_mesh")
-        row = layout.row()
-        row.operator("object.process_anim_meshes", text="Bake (manual)")
+                    box.label(text=f"Output: {optimal_width} x {nframes * num_wraps} "
+                                   f"({num_wraps} wraps)")
 
+        # ---- 3 · Bake & export ----
         box = layout.box()
-        box.label(text="Quick Export (bake + files)")
-        box.prop(scene.vat_settings, "export_directory", text="Folder")
-        box.prop(scene.vat_settings, "export_basename", text="Name")
-        if scene.vat_settings.export_mode == 'STORAGE_BUFFER':
-            box.label(text="frames -> .bin + .json (storage buffer)")
-        elif scene.vat_settings.normalize:
-            box.label(text="positions -> PNG (normalized)")
+        box.label(text="3 · Bake & export", icon='EXPORT')
+        box.operator("object.process_anim_meshes", text="Bake (dry run, no files)")
+        row = box.row()
+        row.label(text="Particle EXPLODE only:")
+        row.operator("object.prepare_explode_mesh", text="Pre-split faces")
+        box.separator()
+        box.prop(vat, "export_directory", text="Folder")
+        box.prop(vat, "export_basename", text="Name")
+        if vat.export_mode == 'STORAGE_BUFFER':
+            box.label(text="Writes: .glb + _vat.bin + _vat.json")
+        elif vat.normalize:
+            box.label(text="Writes: .glb + _positions.png + _normals.png")
         else:
-            box.label(text="positions -> EXR half")
-        box.operator("object.vat_quick_export")
+            box.label(text="Writes: .glb + _positions.exr + _normals.png")
+        if not vat.export_directory:
+            box.label(text="Set a folder to enable export", icon='INFO')
+        box.operator("object.vat_quick_export", text="Quick Export (bake + files)")
 
 
 class VATSettings(bpy.types.PropertyGroup):
     position_mode: bpy.props.EnumProperty(
         name="Position Mode",
-        description="Choose between offsets positions or absolutes positions",
+        description="OFFSETS = motion relative to bind pose (smaller files); ABSOLUTES = world positions",
         items=[
-            ('OFFSETS', "Offsets", "Use offsets"),
-            ('ABSOLUTES', "Absolutes", "Use absolutes")
+            ('OFFSETS', "Offsets", "Motion relative to the bind pose"),
+            ('ABSOLUTES', "Absolutes", "World-space positions")
         ],
         default='OFFSETS'
     )

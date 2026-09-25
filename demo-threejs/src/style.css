@@ -367,7 +367,7 @@ label.row[hidden],
   font-style: normal;
   font-weight: normal;
   line-height: 1;
-  vertical-align: super;
+  vertical-align: text-top;
   opacity: 0.35;
   cursor: help;
   flex: none;
