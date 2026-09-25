@@ -432,20 +432,6 @@
       "fps": 24
     },
     {
-      "id": "cloth_parent",
-      "label": "Cloth Parent \u2014 50k v ",
-      "mesh": "/examples/cloth_parent/cloth_parent.glb",
-      "storage": "/examples/cloth_parent/cloth_parent_vat.bin",
-      "storageMeta": "/examples/cloth_parent/cloth_parent_vat.json",
-      "frames": 61,
-      "numWraps": 1,
-      "positionMode": "offsets",
-      "normalize": false,
-      "minOffset": 0,
-      "maxOffset": 1,
-      "fps": 30
-    },
-    {
       "id": "correctivesmooth_storage",
       "label": "CorrectiveSmooth \u2014 64v ",
       "mesh": "/examples/correctivesmooth_storage/correctivesmooth_storage.glb",
