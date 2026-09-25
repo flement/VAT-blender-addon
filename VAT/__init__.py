@@ -22,7 +22,7 @@
 bl_info = {
     "name": "VAT",
     "author": "Joshua Bogart and Clément Renou",
-    "version": (1, 0, 11),
+    "version": (1, 0, 12),
     "blender": (4, 2, 0),
     "location": "View3D > Sidebar > VAT Tab",
     "description": "A tool for storing per frame vertex data for use in a vertex shader.",
@@ -34,6 +34,7 @@ bl_info = {
 
 import bpy
 import bmesh
+import base64
 import math
 import gzip
 import json
@@ -377,24 +378,53 @@ def _oct_encode(nx, ny, nz):
             max(-127, min(127, round(y * 127))))
 
 
+def _zz_encode(d):
+    """Zigzag-encode a signed int to unsigned (see vat-storage.js)."""
+    return ((d << 1) ^ (d >> 31)) & 0xFFFFFFFF
+
+
+def _leb128_encode(u):
+    """Unsigned LEB128 encode (varint, little-endian base-128)."""
+    out = bytearray()
+    while True:
+        b = u & 0x7F
+        u >>= 7
+        if u:
+            out.append(b | 0x80)
+        else:
+            out.append(b)
+            return bytes(out)
+
+
+def _pack_bitmap(moving, v_count):
+    """Pack a moving-vertex boolean list to bytes (bit i = vertex i moves)."""
+    raw = bytearray((v_count + 7) // 8)
+    for v, m in enumerate(moving):
+        if m:
+            raw[v // 8] |= 1 << (v % 8)
+    return bytes(raw)
+
+
 def write_storage_buffer(path, meta_path, offsets, normals, meta):
-    """Write animation frames as a packed, gzipped buffer (vat-storage/2).
+    """Write animation frames as a packed, gzipped buffer (vat-storage/3).
 
     Vertex-major order ([vertex][frame]): one vertex's consecutive frames
     sit next to each other, so gzip's 32 KB window sees temporal
     coherence (frame-major strided same-vertex samples ~400 KB apart on
     dense meshes, invisible to gzip).
-    Integer offsets are delta-coded per vertex (frame 0 absolute, then
-    frame-to-frame diffs in the abs width: i8 for u8, i16 for u16): cloth-style motion yields small diffs
-    whose zero high bytes gzip crushes (~-35% on tested cloth sim vs
-    vat-storage/1, bit-exact on decode). Oct normals are delta-coded the
-    same way when it gzips smaller.
-    F32 layouts are transposed but never delta-coded
-    (float cumsum would drift). When a motion spike exceeds i16 range,
-    or plain absolute happens to gzip smaller (near-static meshes),
-    offsets fall back to absolute transposed and meta flags it.
-    Layout "none" for normals stores no normal bytes at all (the
-    viewer falls back to geometry normals).
+    On top of the vat-storage/2 baseline (per-vertex delta coding +
+    gzip, bit-exact on decode), /3 adds two file-level squeezes, both
+    decoded CPU-side at load (the GPU buffer keeps its fixed stride):
+    sparse static vertices (frame 0 stored for all vertices, later
+    frames only for vertices that move; a base64 bitmap in the JSON
+    sidecar lists them) and varint diffs (zigzag LEB128: small
+    frame-to-frame diffs shrink to 1 byte instead of a fixed i16).
+    Every combination is tried and the gzipped-smallest wins, so
+    incompressible data transparently falls back to the /2 layout.
+    F32 layouts are transposed (sparsely when it wins) but never
+    delta-coded (float cumsum would drift). Layout "none" for normals
+    stores no normal bytes at all (the viewer falls back to geometry
+    normals).
     """
     # Offsets are always range-quantized (uniform 1/65535 steps over the
     # baked range: ~0.15mm on a 10m range). This replaces the Normalize
@@ -408,12 +438,11 @@ def write_storage_buffer(path, meta_path, offsets, normals, meta):
     xyz = [offsets[v * 4 + j] for v in range(n) for j in range(3)]
     min_o, max_o = min(xyz), max(xyz)
     span = (max_o - min_o) or 1.0
-    meta["format"] = "vat-storage/2"
+    meta["format"] = "vat-storage/3"
     meta["order"] = "vertex-major"
     meta["minOffset"] = min_o
     meta["maxOffset"] = max_o
     meta["normalize"] = False
-    delta = {"offsets": False, "normals": False}
 
     if layout["offsets"] in ("u8x3", "u16x3"):
         qmax = 255 if layout["offsets"] == "u8x3" else 65535
@@ -427,88 +456,182 @@ def write_storage_buffer(path, meta_path, offsets, normals, meta):
     q = ([round((v - min_o) / span * qmax) for v in xyz]
          if qmax is not None else None)
 
-    def pack_offsets(use_delta):
-        # Delta diffs reuse the abs width (u8 -> i8, u16 -> i16) so delta
-        # stays raw-size neutral; u8 falls back to absolute past +-127.
-        dtag = 'b' if atag == 'B' else 'h'
+    # Per-vertex quantized frames: qv[f][v] / octv[f][v].
+    qv = None
+    if q is not None:
+        qv = [[tuple(q[(f * V + v) * 3 + j] for j in range(3))
+               for v in range(V)] for f in range(F)]
+    octv = None
+    if layout["normals"] == "oct8x2":
+        octv = [[_oct_encode(*normals[(f * V + v) * 4:(f * V + v) * 4 + 3])
+                 for v in range(V)] for f in range(F)]
+
+    # A vertex moves when any stored sample differs across frames
+    # (quantized ints / exact floats: replication stays bit-exact).
+    moving = [False] * V
+    if qv is not None:
+        for v in range(V):
+            if any(qv[f][v] != qv[0][v] for f in range(1, F)):
+                moving[v] = True
+    else:
+        for v in range(V):
+            if any(xyz[(f * V + v) * 3 + j] != xyz[v * 3 + j]
+                   for f in range(1, F) for j in range(3)):
+                moving[v] = True
+    if octv is not None:
+        for v in range(V):
+            if any(octv[f][v] != octv[0][v] for f in range(1, F)):
+                moving[v] = True
+    elif layout["normals"] == "f32x3":
+        for v in range(V):
+            if any(normals[(f * V + v) * 4 + j] != normals[v * 4 + j]
+                   for f in range(1, F) for j in range(3)):
+                moving[v] = True
+    movers = [v for v, m in enumerate(moving) if m]
+
+    # SPARSE[0] toggles sparse packing inside the closures below.
+    # Layout stays strictly vertex-major ([vertex][frame], each vertex's
+    # frames contiguous: gzip's 32 KB window sees temporal coherence).
+    # Sparse only drops the later frames of static vertices; frame 0 is
+    # always stored for every vertex.
+    SPARSE = [False]
+
+    def pack_offsets(encoding):
+        # encoding: 'abs' | 'delta-fixed' | 'delta-varint' ('abs' also
+        # covers the f32 transpose, which is never delta-coded).
         out = bytearray()
-        if q is not None:
-            if use_delta:
-                for v in range(V):
-                    out += struct.pack(f'<3{atag}', *[q[(0 * V + v) * 3 + j] for j in range(3)])
-                    prev = [q[(0 * V + v) * 3 + j] for j in range(3)]
-                    for f in range(1, F):
-                        cur = [q[(f * V + v) * 3 + j] for j in range(3)]
-                        out += struct.pack(f'<3{dtag}', *[cur[j] - prev[j] for j in range(3)])
-                        prev = cur
-            else:
-                for v in range(V):
-                    for f in range(F):
-                        out += struct.pack(f'<3{atag}', *[q[(f * V + v) * 3 + j] for j in range(3)])
-        else:
+        if q is None:
+            for v in range(V):
+                framelist = range(F) if (not SPARSE[0] or moving[v]) else (0,)
+                for f in framelist:
+                    out += struct.pack('<3f', *[xyz[(f * V + v) * 3 + j] for j in range(3)])
+            return out
+        if encoding == 'abs':
             for v in range(V):
                 for f in range(F):
-                    out += struct.pack('<3f', *[xyz[(f * V + v) * 3 + j] for j in range(3)])
+                    out += struct.pack(f'<3{atag}', *qv[f][v])
+            return out
+        varint = encoding == 'delta-varint'
+        dtag = 'b' if atag == 'B' else 'h'
+        for v in range(V):
+            out += struct.pack(f'<3{atag}', *qv[0][v])
+            if SPARSE[0] and not moving[v]:
+                continue
+            for f in range(1, F):
+                for j in range(3):
+                    d = qv[f][v][j] - qv[f - 1][v][j]
+                    out += _leb128_encode(_zz_encode(d)) if varint \
+                        else struct.pack(f'<{dtag}', d)
         return out
 
-    def pack_normals(use_delta=False):
+    def pack_normals(encoding):
         out = bytearray()
         if layout["normals"] == "none":
             return out
-        if layout["normals"] == "oct8x2":
+        if layout["normals"] == "f32x3":
             for v in range(V):
-                prev = None
-                for f in range(F):
-                    i = (f * V + v) * 4
-                    cur = _oct_encode(*normals[i:i + 3])
-                    if use_delta and prev is not None:
-                        out += struct.pack('<2h', cur[0] - prev[0], cur[1] - prev[1])
-                    else:
-                        out += struct.pack('<2b', *cur)
-                    prev = cur
-        else:
-            for v in range(V):
-                for f in range(F):
+                framelist = range(F) if (not SPARSE[0] or moving[v]) else (0,)
+                for f in framelist:
                     i = (f * V + v) * 4
                     out += struct.pack('<3f', *normals[i:i + 3])
+            return out
+        if encoding == 'abs':
+            for v in range(V):
+                for f in range(F):
+                    out += struct.pack('<2b', *octv[f][v])
+            return out
+        varint = encoding == 'delta-varint'
+        for v in range(V):
+            out += struct.pack('<2b', *octv[0][v])
+            if SPARSE[0] and not moving[v]:
+                continue
+            for f in range(1, F):
+                for j in range(2):
+                    d = octv[f][v][j] - octv[f - 1][v][j]
+                    out += _leb128_encode(_zz_encode(d)) if varint \
+                        else struct.pack('<h', d)
         return out
 
-    bpv = ({"u8x3": 3, "u16x3": 6, "f32x3": 12}[layout["offsets"]]
-           + {"oct8x2": 2, "f32x3": 12, "none": 0}[layout["normals"]])
-    # Keep the gzipped-smallest representation (same raw size either
-    # way; near-static meshes can prefer absolute). Oct deltas always
-    # fit i16 (encoded range is +-127); u8 offset diffs fit i8 up to
-    # +-127 per frame, u16 up to +-32767.
+    # Fixed-width deltas need diffs that fit (u8 -> i8, u16 -> i16);
+    # varint fits everything. Oct diffs always fit i16 (+-127 range).
+    maxd = 0
     if q is not None:
-        maxd = 0
         for v in range(V):
             for f in range(1, F):
                 for j in range(3):
-                    d = abs(q[(f * V + v) * 3 + j] - q[((f - 1) * V + v) * 3 + j])
+                    d = abs(qv[f][v][j] - qv[f - 1][v][j])
                     if d > maxd:
                         maxd = d
-        dlim = 127 if atag == 'B' else 32767
-        off_cands = ([(pack_offsets(True), True)] if maxd <= dlim else []) \
-            + [(pack_offsets(False), False)]
+    fixed_ok = q is None or maxd <= (127 if atag == 'B' else 32767)
+
+    def zgz(b):
+        return len(gzip.compress(bytes(b), compresslevel=9))
+
+    def off_keys(sparse):
+        suffix = '-sparse' if sparse else ''
+        if q is None:
+            return ['abs-f32' + suffix]
+        keys = ['abs', 'delta-varint' + suffix]
+        if fixed_ok:
+            keys.append('delta-fixed' + suffix)
+        return keys
+
+    def nrm_keys(sparse):
+        suffix = '-sparse' if sparse else ''
+        if layout["normals"] == "none":
+            return ['none']
+        if layout["normals"] == "f32x3":
+            return ['abs-f32' + suffix]
+        return ['abs', 'delta-varint' + suffix, 'delta-fixed' + suffix]
+
+    def pack_off_key(key):
+        SPARSE[0] = key.endswith('-sparse')
+        return pack_offsets('abs' if key.startswith('abs') else key.replace('-sparse', ''))
+
+    def pack_nrm_key(key):
+        if key == 'none':
+            return bytearray()
+        SPARSE[0] = key.endswith('-sparse')
+        return pack_normals('abs' if key.startswith('abs') else key.replace('-sparse', ''))
+
+    # Joint tournament over every (offsets, normals) pair, dense plus
+    # sparse when something is static. The legacy /2 pairs are a subset
+    # of the candidates, so /3 provably never loses to /2. Packed
+    # lazily: only the winning bytes are retained.
+    has_static = bool(movers) and len(movers) < V
+    best = None
+    for sparse in ([False, True] if has_static else [False]):
+        for o in off_keys(sparse):
+            ob = pack_off_key(o)
+            for n in nrm_keys(sparse):
+                if sparse and o == 'abs' and n in ('abs', 'none'):
+                    continue  # already scored in the dense round
+                nb = pack_nrm_key(n)
+                size = zgz(bytes(ob) + bytes(nb))
+                if best is None or size < best[0]:
+                    best = (size, o, n, bytes(ob), bytes(nb))
+    _, off_enc, nrm_enc, off_buf, nrm_buf = best
+    buf = off_buf + nrm_buf
+    SPARSE[0] = False
+    off_sparse = off_enc.endswith('-sparse')
+    nrm_sparse = nrm_enc.endswith('-sparse')
+    use_delta = off_enc.startswith('delta')
+    use_ndelta = nrm_enc.startswith('delta')
+    use_varint = off_enc == 'delta-varint' or off_enc == 'delta-varint-sparse'
+    use_nvarint = nrm_enc == 'delta-varint' or nrm_enc == 'delta-varint-sparse'
+    sparse_on = off_sparse or nrm_sparse
+    if sparse_on:
+        meta["sparse"] = {"bitmap": base64.b64encode(
+            _pack_bitmap(moving, V)).decode('ascii'),
+            "staticCount": V - len(movers),
+            "offsets": off_sparse, "normals": nrm_sparse}
     else:
-        off_cands = [(pack_offsets(False), False)]
-    nrm_cands = [(pack_normals(False), False)]
-    if layout["normals"] == "oct8x2":
-        nrm_cands.append((pack_normals(True), True))
-    buf, use_delta, nrm, use_ndelta = min(
-        ((o, od, m, nd) for o, od in off_cands for m, nd in nrm_cands),
-        key=lambda c: len(gzip.compress(bytes(c[0] + c[2]), compresslevel=9)))
-    delta["offsets"] = use_delta
-    delta["normals"] = use_ndelta
-    buf = buf + nrm
-    # Delta normals store i16 diffs (4 B) past frame 0, so raw grows by
-    # 2 B per non-first sample; offsets delta is raw-size neutral.
-    expect = n * bpv + (V * (F - 1) * 2 if use_ndelta else 0)
-    assert len(buf) == expect, (len(buf), expect)
-    meta["delta"] = delta
+        meta["sparse"] = None
+    meta["delta"] = {"offsets": use_delta, "normals": use_ndelta}
+    meta["varint"] = {"offsets": use_varint, "normals": use_nvarint}
     meta["compression"] = "gzip"
     with open(path, 'wb') as f:
-        f.write(gzip.compress(bytes(buf)))
+        f.write(gzip.compress(buf))
     with open(meta_path, 'w') as f:
         json.dump(meta, f, indent=2)
 
@@ -777,6 +900,11 @@ class VIEW3D_PT_VertexAnimation(bpy.types.Panel):
         if scene.vat_settings.export_mode == 'STORAGE_BUFFER':
             col.prop(scene.vat_settings, "offset_precision", text="Offsets")
             col.prop(scene.vat_settings, "normal_precision", text="Normals")
+            # Packed ints, not GPU floats: the viewer expands them
+            # CPU-side at load (three.js uploads the buffer as-is, so
+            # this decode is the price of small files, not a three.js
+            # requirement). Lower precision = smaller .bin, same decode.
+            col.label(text="Packed on disk, expanded to f32 at load.")
             bpv = (OFFSET_FORMATS[scene.vat_settings.offset_precision]["bytes"]
                    + NORMAL_FORMATS[scene.vat_settings.normal_precision]["bytes"])
             # Rough pre-bake estimate: evaluated (not base) verts at the
@@ -787,7 +915,7 @@ class VIEW3D_PT_VertexAnimation(bpy.types.Panel):
             col.label(text=f"Est: ~{format_bytes(bpv * eval_verts * nframes)} raw "
                            f"({eval_verts:,} verts x {nframes} frames, current frame)")
             if scene.frame_step > 1:
-                col.label(text=f"Playback: {scene.render.fps / scene.frame_step:g} fps "
+                col.label(text=f"Playback: {scene.render.fps / scene.frame_step:g} fps")
         else:
             # Texture-only controls: no image is baked in Storage mode,
             # so flip/normalize/wrap have no effect there.
@@ -875,14 +1003,14 @@ class VATSettings(bpy.types.PropertyGroup):
     )
     offset_precision: bpy.props.EnumProperty(
         name="Offset Precision",
-        description="Per-axis motion quantization (weight vs fidelity)",
+        description="Motion packed as ints on disk, expanded to float32 at load (weight vs fidelity)",
         items=[(k, p["label"], p["about"])
                for k, p in OFFSET_FORMATS.items()],
         default='U16'
     )
     normal_precision: bpy.props.EnumProperty(
         name="Normal Precision",
-        description="Per-vertex direction quantization (weight vs fidelity)",
+        description="Direction packed (oct) or raw on disk, expanded at load (weight vs fidelity)",
         items=[(k, p["label"], p["about"])
                for k, p in NORMAL_FORMATS.items()],
         default='OCT'

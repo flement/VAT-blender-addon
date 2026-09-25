@@ -1,21 +1,31 @@
 {
-  "format": "vat-storage/2",
+  "format": "vat-storage/3",
   "basename": "hook_storage",
   "positionMode": "offsets",
   "fps": 24,
   "vertexCount": 64,
   "frameCount": 60,
-  "minOffset": 0.0,
-  "maxOffset": 1.3867652416229248,
-  "normalize": false,
   "layout": {
     "offsets": "u16x3",
     "normals": "oct8x2"
   },
-  "compression": "gzip",
   "order": "vertex-major",
+  "minOffset": 0.0,
+  "maxOffset": 1.3867652416229248,
+  "normalize": false,
+  "sparse": {
+    "bitmap": "AAAAAHie5wE=",
+    "staticCount": 48,
+    "offsets": true,
+    "normals": true
+  },
   "delta": {
     "offsets": true,
-    "normals": false
-  }
+    "normals": true
+  },
+  "varint": {
+    "offsets": true,
+    "normals": true
+  },
+  "compression": "gzip"
 }

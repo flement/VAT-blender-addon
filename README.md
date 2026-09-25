@@ -22,7 +22,7 @@ In a real-time engine (such as Three.js), the static mesh is imported along with
 | Size control | wrap mode, PNG normalize | Offsets/Normals precision (u8/u16/f32, oct) |
 | Best for | WebGL2, texture pipelines | WebGPU, many instances, GPU blending/IK |
 
-VAB frames are packed (offsets as 8/16/32-bit per axis over the baked range, normals octahedral 2-byte or float32 — 5/8/24 bytes per vertex per frame) and gzipped. The JSON sidecar (`format`, `vertexCount`, `frameCount`, `fps`, `min/maxOffset`, `layout`, `compression`) fully describes the `.bin`; the viewer refuses unknown formats instead of rendering garbage.
+VAB frames are packed (offsets as 8/16/32-bit per axis over the baked range, normals octahedral 2-byte or float32 — 5/8/24 bytes per vertex per frame) and gzipped. `vat-storage/3` adds sparse static vertices (later frames stored for movers only) and varint diffs (zigzag LEB128); every combination is tried and the gzipped-smallest wins, so it never loses to `/2`. Note: the viewer expands the `.bin` to `vec4f` CPU-side at load — three.js uploads storage buffers as-is, so this decode is the price of small files, not a three.js requirement (raw float32 would need almost no decode, at ~8x the file size). The JSON sidecar (`format`, `vertexCount`, `frameCount`, `fps`, `min/maxOffset`, `layout`, `compression`) fully describes the `.bin`; the viewer refuses unknown formats instead of rendering garbage.
 
 ## Installation
 1. Download this repo — or grab the `VAT-vX.Y.Z.zip` from [Releases](../../releases) (published automatically when a `v*` tag matches `VAT/blender_manifest.toml`). The zip must contain `VAT/__init__.py` + `VAT/blender_manifest.toml` (currently 1.0.10).

@@ -24,7 +24,12 @@ import { StorageBufferAttribute } from 'three/webgpu'
  * diffs in the abs width — i8 for u8, i16 for u16; meta.delta flags a
  * fallback to absolute on spikes), then normals octahedral-encoded to 2 signed bytes
  * — 8 bytes/vertex/frame (vs 32 unpacked). F32 layouts are transposed but
- * never delta-coded. Layout "none" stores no normal bytes: decode returns
+ * never delta-coded. vat-storage/3 adds, per block, sparse static vertices
+ * (frame 0 for all vertices, later frames for movers only; the mover set
+ * rides in meta.sparse as a base64 bitmap) and varint diffs (zigzag
+ * LEB128, meta.varint flags). Every combination is picked
+ * gzipped-smallest at bake.
+ * Layout "none" stores no normal bytes: decode returns
  * null normals and the material falls back to geometry normals.
  * Decoding reverses exactly (integer cumsum, no drift).
  * Frame rows run last-frame-first like the texture
@@ -33,7 +38,7 @@ import { StorageBufferAttribute } from 'three/webgpu'
  * row = f*V + id. Everything is expanded back to vec4f StorageBuffer
  * attributes at load, so the shader below is layout-agnostic.
  */
-export const VAT_STORAGE_FORMAT = 'vat-storage/2'
+export const VAT_STORAGE_FORMAT = 'vat-storage/3'
 
 export async function loadVatStorage(url, metaUrl) {
   const meta = await (await fetch(metaUrl)).json()
@@ -56,7 +61,50 @@ export async function loadVatStorage(url, metaUrl) {
   }
 }
 
+/**
+ * One call: fetch + decode + material. The `.glb` stays yours
+ * (it carries the bind pose and the uv1 bake ids); point its mesh
+ * at the returned material and drive `uniforms.frame` (see below).
+ *
+ *   const vat = await loadVatStorageMaterial('cloth_vat.bin', 'cloth_vat.json')
+ *   mesh.material = vat.material
+ *   vat.uniforms.frame.value = (t * vat.meta.fps) % vat.meta.frameCount
+ */
+export async function loadVatStorageMaterial(url, metaUrl, params = {}) {
+  const { meta, offsets, normals } = await loadVatStorage(url, metaUrl)
+  const { material, uniforms } = createVatStorageMaterial({ offsets, normals, meta, params })
+  return { material, uniforms, meta }
+}
+
 export function decodeVatBuffer(buf, meta) {
+  return decodeVatBufferV3(buf, meta)
+}
+
+function readVarint(view, p) {
+  // Unsigned LEB128; returns [value, nextOffset].
+  let u = 0
+  let shift = 0
+  for (;;) {
+    const b = view.getUint8(p++)
+    u |= (b & 0x7f) << shift
+    if (!(b & 0x80)) break
+    shift += 7
+  }
+  return [u, p]
+}
+
+const zzDecode = (u) => (u >>> 1) ^ -(u & 1)
+
+function moversFromBitmap(b64, V) {
+  const raw = atob(b64)
+  const movers = []
+  for (let v = 0; v < V; v++) {
+    if ((raw.charCodeAt(v >> 3) >> (v & 7)) & 1) movers.push(v)
+  }
+  return movers
+}
+
+export function decodeVatBufferV3(buf, meta) {
   const { vertexCount: V, frameCount: F } = meta
   const OFF = { u8x3: 1, u16x3: 2, f32x3: 4 }
   const NRM = { oct8x2: 2, f32x3: 12, none: 0 }
@@ -65,51 +113,50 @@ export function decodeVatBuffer(buf, meta) {
   if (!ob || nb === undefined) {
     throw new Error(`Unsupported storage layout '${JSON.stringify(meta.layout)}': re-export with the current VAT addon`)
   }
-  const bpv = ob * 3 + nb
   const n = V * F
   const view = new DataView(buf)
-  if (view.byteLength < n * bpv) throw new Error(`Truncated storage buffer: ${view.byteLength} bytes for ${n} verts`)
-  // Blocks stored vertex-major ([vertex][frame]). Integer offsets are
-  // delta-coded per vertex when meta.delta.offsets is set (frame 0
-  // absolute, then diffs in the abs width; integer cumsum, bit-exact). Output rows
-  // are frame-major, last-frame-first.
   const span = meta.maxOffset - meta.minOffset || 1
   const lo = meta.layout.offsets
   const qmax = lo === 'u8x3' ? 255 : 65535
   const readU = (v) => (v / qmax) * span + meta.minOffset
+  const readFix = ob === 1 ? (p) => view.getUint8(p) : (p) => view.getUint16(p, true)
+  const readDfix = ob === 1 ? (p) => view.getInt8(p) : (p) => view.getInt16(p, true)
   const offsets = new Float32Array(n * 4)
   const normals = new Float32Array(n * 4)
   const at = (f, v) => (f * V + v) * 4
+  const movers = meta.sparse ? moversFromBitmap(meta.sparse.bitmap, V) : null
+  const moverSet = movers ? new Set(movers) : null
   let p = 0
+  // --- offsets (strict vertex-major: each vertex's frames contiguous) ---
   if (lo === 'f32x3') {
+    const sparse = !!meta.sparse?.offsets
     for (let v = 0; v < V; v++) {
+      let x = view.getFloat32(p, true)
+      let y = view.getFloat32(p + 4, true)
+      let z = view.getFloat32(p + 8, true)
+      p += 12
       for (let f = 0; f < F; f++) {
+        if (f > 0 && (!sparse || moverSet.has(v))) {
+          x = view.getFloat32(p, true)
+          y = view.getFloat32(p + 4, true)
+          z = view.getFloat32(p + 8, true)
+          p += 12
+        }
         const i = at(f, v)
-        offsets[i] = view.getFloat32(p, true)
-        offsets[i + 1] = view.getFloat32(p + 4, true)
-        offsets[i + 2] = view.getFloat32(p + 8, true)
+        offsets[i] = x
+        offsets[i + 1] = y
+        offsets[i + 2] = z
         offsets[i + 3] = 1
-        p += 12
       }
     }
-  } else if (meta.delta?.offsets) {
+  } else if (!meta.delta?.offsets) {
     for (let v = 0; v < V; v++) {
-      let qx = ob === 1 ? view.getUint8(p) : view.getUint16(p, true)
-      let qy = ob === 1 ? view.getUint8(p + ob) : view.getUint16(p + 2, true)
-      let qz = ob === 1 ? view.getUint8(p + 2 * ob) : view.getUint16(p + 4, true)
-      p += 3 * ob
-      let i = at(0, v)
-      offsets[i] = readU(qx)
-      offsets[i + 1] = readU(qy)
-      offsets[i + 2] = readU(qz)
-      offsets[i + 3] = 1
-      for (let f = 1; f < F; f++) {
-        // Diffs reuse the abs width (u8 -> i8, u16 -> i16).
-        qx += ob === 1 ? view.getInt8(p) : view.getInt16(p, true)
-        qy += ob === 1 ? view.getInt8(p + ob) : view.getInt16(p + 2, true)
-        qz += ob === 1 ? view.getInt8(p + 2 * ob) : view.getInt16(p + 4, true)
+      for (let f = 0; f < F; f++) {
+        const qx = readFix(p)
+        const qy = readFix(p + ob)
+        const qz = readFix(p + 2 * ob)
         p += 3 * ob
-        i = at(f, v)
+        const i = at(f, v)
         offsets[i] = readU(qx)
         offsets[i + 1] = readU(qy)
         offsets[i + 2] = readU(qz)
@@ -117,12 +164,30 @@ export function decodeVatBuffer(buf, meta) {
       }
     }
   } else {
+    const sparse = !!meta.sparse?.offsets
+    const varint = !!meta.varint?.offsets
     for (let v = 0; v < V; v++) {
+      let qx = readFix(p)
+      let qy = readFix(p + ob)
+      let qz = readFix(p + 2 * ob)
+      p += 3 * ob
       for (let f = 0; f < F; f++) {
-        const qx = ob === 1 ? view.getUint8(p) : view.getUint16(p, true)
-        const qy = ob === 1 ? view.getUint8(p + ob) : view.getUint16(p + 2, true)
-        const qz = ob === 1 ? view.getUint8(p + 2 * ob) : view.getUint16(p + 4, true)
-        p += 3 * ob
+        if (f > 0 && (!sparse || moverSet.has(v))) {
+          if (varint) {
+            let u
+            ;[u, p] = readVarint(view, p)
+            qx += zzDecode(u)
+            ;[u, p] = readVarint(view, p)
+            qy += zzDecode(u)
+            ;[u, p] = readVarint(view, p)
+            qz += zzDecode(u)
+          } else {
+            qx += readDfix(p)
+            qy += readDfix(p + ob)
+            qz += readDfix(p + 2 * ob)
+            p += 3 * ob
+          }
+        }
         const i = at(f, v)
         offsets[i] = readU(qx)
         offsets[i + 1] = readU(qy)
@@ -131,41 +196,29 @@ export function decodeVatBuffer(buf, meta) {
       }
     }
   }
-  // Layout "none": no normal bytes in the buffer, null signals the
-  // geometry-normals fallback to material + preview.
+  // --- normals ---
   if (nb === 0) return { offsets, normals: null }
   if (meta.layout.normals === 'f32x3') {
+    const sparse = !!meta.sparse?.normals
     for (let v = 0; v < V; v++) {
+      let x = view.getFloat32(p, true)
+      let y = view.getFloat32(p + 4, true)
+      let z = view.getFloat32(p + 8, true)
+      p += 12
       for (let f = 0; f < F; f++) {
+        if (f > 0 && (!sparse || moverSet.has(v))) {
+          x = view.getFloat32(p, true)
+          y = view.getFloat32(p + 4, true)
+          z = view.getFloat32(p + 8, true)
+          p += 12
+        }
         const i = at(f, v)
-        normals[i] = view.getFloat32(p, true)
-        normals[i + 1] = view.getFloat32(p + 4, true)
-        normals[i + 2] = view.getFloat32(p + 8, true)
-        p += 12
+        normals[i] = x
+        normals[i + 1] = y
+        normals[i + 2] = z
       }
     }
-  } else if (meta.delta?.normals) {
-    for (let v = 0; v < V; v++) {
-      let qx = view.getInt8(p)
-      let qy = view.getInt8(p + 1)
-      p += 2
-      let i = at(0, v)
-      let dec = octDecode(qx, qy)
-      normals[i] = dec[0]
-      normals[i + 1] = dec[1]
-      normals[i + 2] = dec[2]
-      for (let f = 1; f < F; f++) {
-        qx += view.getInt16(p, true)
-        qy += view.getInt16(p + 2, true)
-        p += 4
-        i = at(f, v)
-        dec = octDecode(qx, qy)
-        normals[i] = dec[0]
-        normals[i + 1] = dec[1]
-        normals[i + 2] = dec[2]
-      }
-    }
-  } else {
+  } else if (!meta.delta?.normals) {
     for (let v = 0; v < V; v++) {
       for (let f = 0; f < F; f++) {
         const [x, y, z] = octDecode(view.getInt8(p), view.getInt8(p + 1))
@@ -174,6 +227,34 @@ export function decodeVatBuffer(buf, meta) {
         normals[i + 1] = y
         normals[i + 2] = z
         p += 2
+      }
+    }
+  } else {
+    const sparse = !!meta.sparse?.normals
+    const varint = !!meta.varint?.normals
+    for (let v = 0; v < V; v++) {
+      let qx = view.getInt8(p)
+      let qy = view.getInt8(p + 1)
+      p += 2
+      for (let f = 0; f < F; f++) {
+        if (f > 0 && (!sparse || moverSet.has(v))) {
+          if (varint) {
+            let u
+            ;[u, p] = readVarint(view, p)
+            qx += zzDecode(u)
+            ;[u, p] = readVarint(view, p)
+            qy += zzDecode(u)
+          } else {
+            qx += view.getInt16(p, true)
+            qy += view.getInt16(p + 2, true)
+            p += 4
+          }
+        }
+        const dec = octDecode(qx, qy)
+        const i = at(f, v)
+        normals[i] = dec[0]
+        normals[i + 1] = dec[1]
+        normals[i + 2] = dec[2]
       }
     }
   }
@@ -194,8 +275,7 @@ function octDecode(x, y) {
   return [nx / l, ny / l, nz / l]
 }
 
-export function createVatStorageMaterial({ offsets, normals, meta, params = {} }) {
-  const { vertexCount: V, frameCount: F } = meta
+export function createVatStorageMaterial({ offsets, normals, meta, params = {} }) {  const { vertexCount: V, frameCount: F } = meta
   const uniforms = {
     offsets: { value: offsets },
     normals: { value: normals },

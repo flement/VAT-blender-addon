@@ -1,21 +1,26 @@
 {
-  "format": "vat-storage/2",
+  "format": "vat-storage/3",
   "basename": "twist_storage",
   "positionMode": "offsets",
   "fps": 24,
   "vertexCount": 152,
   "frameCount": 60,
-  "minOffset": -1.9999988079071045,
-  "maxOffset": 1.9999988079071045,
-  "normalize": false,
   "layout": {
     "offsets": "u16x3",
     "normals": "oct8x2"
   },
-  "compression": "gzip",
   "order": "vertex-major",
+  "minOffset": -1.9999988079071045,
+  "maxOffset": 1.9999988079071045,
+  "normalize": false,
+  "sparse": null,
   "delta": {
     "offsets": true,
-    "normals": false
-  }
+    "normals": true
+  },
+  "varint": {
+    "offsets": true,
+    "normals": true
+  },
+  "compression": "gzip"
 }

@@ -1,21 +1,26 @@
 {
-  "format": "vat-storage/2",
+  "format": "vat-storage/3",
   "basename": "shrinkwrap_storage",
   "positionMode": "offsets",
   "fps": 24,
   "vertexCount": 64,
   "frameCount": 60,
-  "minOffset": -0.4241018295288086,
-  "maxOffset": 0.25981998443603516,
-  "normalize": false,
   "layout": {
     "offsets": "u16x3",
     "normals": "oct8x2"
   },
-  "compression": "gzip",
   "order": "vertex-major",
+  "minOffset": -0.4241018295288086,
+  "maxOffset": 0.25981998443603516,
+  "normalize": false,
+  "sparse": null,
   "delta": {
     "offsets": true,
-    "normals": false
-  }
+    "normals": true
+  },
+  "varint": {
+    "offsets": true,
+    "normals": true
+  },
+  "compression": "gzip"
 }

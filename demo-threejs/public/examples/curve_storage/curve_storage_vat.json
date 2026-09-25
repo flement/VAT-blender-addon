@@ -1,21 +1,26 @@
 {
-  "format": "vat-storage/2",
+  "format": "vat-storage/3",
   "basename": "curve_storage",
   "positionMode": "offsets",
   "fps": 24,
   "vertexCount": 64,
   "frameCount": 60,
-  "minOffset": -0.4756298065185547,
-  "maxOffset": 1.8368217945098877,
-  "normalize": false,
   "layout": {
     "offsets": "u16x3",
     "normals": "oct8x2"
   },
-  "compression": "gzip",
   "order": "vertex-major",
+  "minOffset": -0.4756298065185547,
+  "maxOffset": 1.8368217945098877,
+  "normalize": false,
+  "sparse": null,
   "delta": {
     "offsets": true,
-    "normals": false
-  }
+    "normals": true
+  },
+  "varint": {
+    "offsets": true,
+    "normals": true
+  },
+  "compression": "gzip"
 }

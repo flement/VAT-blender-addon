@@ -104,7 +104,10 @@ def main():
                 "positionMode": vat.position_mode.lower(),
                 "fps": scene.render.fps,
                 "vertexCount": c['vertex_count'],
-                "frameCount": c['frame_count']}
+                "frameCount": c['frame_count'],
+                "layout": {
+                    "offsets": VAT.OFFSET_FORMATS[OFFSET_PRECISION]["layout"],
+                    "normals": VAT.NORMAL_FORMATS[NORMAL_PRECISION]["layout"]}}
         VAT.write_storage_buffer(os.path.join(out, ex_id + "_vat.bin"),
                                  os.path.join(out, ex_id + "_vat.json"),
                                  c['offsets'], c['normals'], meta)

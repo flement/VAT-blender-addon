@@ -1,21 +1,26 @@
 {
-  "format": "vat-storage/2",
+  "format": "vat-storage/3",
   "basename": "lattice_storage",
   "positionMode": "offsets",
   "fps": 24,
   "vertexCount": 64,
   "frameCount": 60,
-  "minOffset": -0.0,
-  "maxOffset": 1.0686779022216797,
-  "normalize": false,
   "layout": {
     "offsets": "u16x3",
     "normals": "oct8x2"
   },
-  "compression": "gzip",
   "order": "vertex-major",
+  "minOffset": -0.0,
+  "maxOffset": 1.0686779022216797,
+  "normalize": false,
+  "sparse": null,
   "delta": {
     "offsets": true,
     "normals": false
-  }
+  },
+  "varint": {
+    "offsets": true,
+    "normals": false
+  },
+  "compression": "gzip"
 }
