@@ -83,7 +83,7 @@
         <label class="row check"><span>NORMALIZE&gt;PNG <i class="hint" title="PNG path only: bake remaps offsets to 0-1, shader denormalizes with MIN/MAX. Off for EXR half-float.">?</i></span><input type="checkbox" data-param="normalize" /></label>
         <label class="row"><span>MIN_OFF <i class="hint" title="Baked offsets range. Auto-filled per example. Shader: raw*(MAX-MIN)+MIN. Storage .bin always carries its own range.">?</i></span><input type="number" data-param="minOffset" step="any" /></label>
         <label class="row"><span>MAX_OFF <i class="hint" title="Baked offsets range. Auto-filled per example. Shader: raw*(MAX-MIN)+MIN. Storage .bin always carries its own range.">?</i></span><input type="number" data-param="maxOffset" step="any" /></label>
-        <label class="row" data-backends="texture"><span>TEX_FILTER <i class="hint" title="Texture sampling: nearest = crisp per-texel, linear = smoothed. Storage uses SMOOTH instead.">?</i></span>
+        <label class="row" data-backends="texture"><span>TEX_FILTER <i class="hint" title="Texture sampling: nearest = crisp per-texel, linear = smoothed.">?</i></span>
           <select data-param="texFilter">
             <option value="nearest" selected>nearest (crisp)</option>
             <option value="linear">linear (smooth)</option>

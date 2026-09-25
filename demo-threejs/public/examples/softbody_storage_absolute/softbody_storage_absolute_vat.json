@@ -1,0 +1,26 @@
+{
+  "format": "vat-storage/3",
+  "basename": "softbody_storage_absolute",
+  "positionMode": "absolutes",
+  "fps": 24,
+  "vertexCount": 36,
+  "frameCount": 60,
+  "layout": {
+    "offsets": "u16x3",
+    "normals": "oct8x2"
+  },
+  "order": "vertex-major",
+  "minOffset": -3.642984390258789,
+  "maxOffset": 2.0275402069091797,
+  "normalize": false,
+  "sparse": null,
+  "delta": {
+    "offsets": true,
+    "normals": false
+  },
+  "varint": {
+    "offsets": true,
+    "normals": false
+  },
+  "compression": "gzip"
+}

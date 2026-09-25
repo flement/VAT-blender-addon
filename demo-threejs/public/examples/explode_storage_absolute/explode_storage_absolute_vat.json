@@ -1,0 +1,26 @@
+{
+  "format": "vat-storage/3",
+  "basename": "explode_storage_absolute",
+  "positionMode": "absolutes",
+  "fps": 24,
+  "vertexCount": 144,
+  "frameCount": 60,
+  "layout": {
+    "offsets": "u16x3",
+    "normals": "oct8x2"
+  },
+  "order": "vertex-major",
+  "minOffset": -3.688876196742058,
+  "maxOffset": 3.4819107055664062,
+  "normalize": false,
+  "sparse": null,
+  "delta": {
+    "offsets": true,
+    "normals": false
+  },
+  "varint": {
+    "offsets": false,
+    "normals": false
+  },
+  "compression": "gzip"
+}

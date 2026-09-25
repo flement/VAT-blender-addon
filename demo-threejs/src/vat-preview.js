@@ -59,6 +59,47 @@ export function buildPreview({
     pctx.putImageData(pimg, 0, 0);
   }
 
+  // --- Positions fallback: PNG (normalize path) loads as an HTML image
+  // (no .data): rasterize it and normalize its 8-bit channels by min/max,
+  // same mem-row mapping as the EXR branch above.
+  if (!posOff && posTexture.image && posTexture.image.width) {
+    const src = posTexture.image;
+    const tmp = document.createElement("canvas");
+    tmp.width = W;
+    tmp.height = H;
+    const tctx = tmp.getContext("2d", { willReadFrequently: true });
+    tctx.drawImage(src, 0, 0, W, H);
+    const px = tctx.getImageData(0, 0, W, H).data;
+    min = Infinity;
+    max = -Infinity;
+    const n = W * H;
+    for (let i = 0; i < n; i++) {
+      for (let c = 0; c < 3; c++) {
+        const v = px[i * 4 + c] / 255;
+        if (v < min) min = v;
+        if (v > max) max = v;
+      }
+    }
+    const span = max - min || 1;
+    posOff = document.createElement("canvas");
+    posOff.width = W;
+    posOff.height = H;
+    const pctx = posOff.getContext("2d");
+    const pimg = pctx.createImageData(W, H);
+    for (let y = 0; y < H; y++) {
+      const drow = H - 1 - y;
+      for (let x = 0; x < W; x++) {
+        const si = (drow * W + x) * 4;
+        const di = (y * W + x) * 4;
+        for (let c = 0; c < 3; c++) {
+          pimg.data[di + c] = Math.round(((px[si + c] / 255 - min) / span) * 255);
+        }
+        pimg.data[di + 3] = 255;
+      }
+    }
+    pctx.putImageData(pimg, 0, 0);
+  }
+
   // --- Normals offscreen: PNG file rows are top-down = mem bottom-up,
   // so flip vertically on draw to land in mem order like positions.
   // Optional: without a normals texture the canvas stays empty.

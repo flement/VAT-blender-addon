@@ -222,7 +222,9 @@ async function reloadVat({ frameCamera }) {
       }
       if (!sources.positions) throw new Error('Drop a positions texture below (slot 02)')
       const [positions, normals] = await Promise.all([
-        loadTexture(sources.positions, { flipY: false }),
+        // EXR arrives pre-flipped from EXRLoader (flipY=false avoids a
+        // double flip); PNG needs the upload flip to land rows like EXR.
+        loadTexture(sources.positions, { flipY: !sources.positions.toLowerCase().endsWith('.exr') }),
         sources.normals ? loadTexture(sources.normals, { flipY: true }) : null,
       ])
       const texW = positions.image.width

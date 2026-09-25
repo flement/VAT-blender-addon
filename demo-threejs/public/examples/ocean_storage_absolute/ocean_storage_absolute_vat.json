@@ -1,0 +1,26 @@
+{
+  "format": "vat-storage/3",
+  "basename": "ocean_storage_absolute",
+  "positionMode": "absolutes",
+  "fps": 24,
+  "vertexCount": 2500,
+  "frameCount": 60,
+  "layout": {
+    "offsets": "u16x3",
+    "normals": "oct8x2"
+  },
+  "order": "vertex-major",
+  "minOffset": -2.5701656341552734,
+  "maxOffset": 2.5701656341552734,
+  "normalize": false,
+  "sparse": null,
+  "delta": {
+    "offsets": true,
+    "normals": true
+  },
+  "varint": {
+    "offsets": true,
+    "normals": true
+  },
+  "compression": "gzip"
+}
