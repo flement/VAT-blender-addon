@@ -20,6 +20,10 @@ Deep links (see `public/examples.json` for ids):
 `?frame=N` opens paused on frame N (0-based). Examples:
 `/?ex=twist` (Simple Deform), `/?ex=explode&frame=10`, `/?ex=wave`.
 
+Shortcuts: `space` play/pause, `←/→` step frame (`shift` = ±10),
+`home/end` first/last, `R` reverse, `F` frame mesh, `L` reload,
+`H` panel, `T` textures.
+
 Re-bake after scene changes: open `blender-examples/vat_test.blend` in Blender
 4.2+ with the VAT addon enabled and run `blender-examples/export_examples.py`
 (every `VAT_*` mesh → `<id>.glb` + `positions.exr` + `normals.png`).
@@ -46,3 +50,5 @@ for the row derivation from `VAT/__init__.py`). It builds on
 a directional sun, a hemisphere fill, and a room environment. Normals are
 decoded (`*2-1`, `.xzy` swizzle like positions) into `objectNormal`, letting
 three's standard lighting pipeline do the rest.
+
+Icons: inline SVGs from [Lucide](https://lucide.dev) (ISC), sources kept in `src/icons/`.

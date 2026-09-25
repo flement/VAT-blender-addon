@@ -16,8 +16,8 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { EXRLoader } from 'three/addons/loaders/EXRLoader.js'
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
 import { createVatMaterial, syncVatUniforms } from './vat-material.js'
-import { createVatStorageMaterial, loadVatStorage } from './vat-storage.js'
-import { buildPreview } from './vat-preview.js'
+import { createVatStorageMaterial, loadVatStorage, syncVatStorageUniforms } from './vat-storage.js'
+import { buildPreview, buildStoragePreview } from './vat-preview.js'
 
 const params = {
   backend: 'texture',
@@ -34,6 +34,8 @@ const params = {
   playing: true,
   reverse: false,
   time: 0,
+  step: 1,
+  smooth: true,
 }
 
 const sources = { mesh: '', positions: '', normals: '', storage: '', storageMeta: '' }
@@ -46,6 +48,11 @@ const overlay = document.querySelector('#overlay')
 const overlayText = document.querySelector('#overlay-text')
 const statusBox = document.querySelector('#status')
 const frameReadout = document.querySelector('#frame-readout')
+const timeReadout = document.querySelector('#time-readout')
+const btnPlay = document.querySelector('#btn-play')
+const btnReverse = document.querySelector('#btn-reverse')
+const icoPlay = btnPlay.querySelector('[data-icon="play"]')
+const icoPause = btnPlay.querySelector('[data-icon="pause"]')
 const exampleSelect = document.querySelector('#example-select')
 
 const renderer = new WebGPURenderer({ antialias: true })
@@ -76,9 +83,46 @@ addEventListener('resize', () => {
 let vat = null // { material, uniforms }
 let vatRoot = null
 let vatMesh = null
+let storageSummary = ''
+
+function storagePlaybackSuffix() {
+  if (params.backend !== 'storage' || !vat) return ''
+  return ` | step x${params.step}${params.smooth ? ' smooth' : ''} = ${parseFloat(effFps().toFixed(2))} fps`
+}
 
 function setStatus(lines) {
   statusBox.textContent = lines.join('\n')
+}
+
+// Human file weights in the asset slots (decimal MB, like the Blender panel).
+function fmtSize(n) {
+  n = Number(n)
+  if (!Number.isFinite(n) || n < 0) return ''
+  const units = ['B', 'KB', 'MB', 'GB']
+  let u = 0
+  while (n >= 1000 && u < units.length - 1) { n /= 1000; u++ }
+  return u === 0 ? `${Math.round(n)} B` : `${n.toFixed(1)} ${units[u]}`
+}
+
+function setSlotLabel(slot, name, size) {
+  document.querySelector(`[data-slot-label="${slot}"]`).textContent =
+    size != null ? `${name} · ${fmtSize(size)}` : name
+}
+
+// Fill in remote (example) file weights via HEAD; blobs already carry
+// their size from the drop handler. Silent fallback to bare names.
+async function refreshSlotSizes() {
+  for (const [slot, url] of Object.entries(sources)) {
+    if (!url || url.startsWith('blob:')) continue
+    const name = decodeURIComponent(url.split('/').pop())
+    try {
+      const head = await fetch(url, { method: 'HEAD' })
+      const len = Number(head.headers.get('content-length'))
+      setSlotLabel(slot, name, Number.isFinite(len) && len >= 0 ? len : null)
+    } catch {
+      setSlotLabel(slot, name, null)
+    }
+  }
 }
 
 function showError(message) {
@@ -98,7 +142,13 @@ async function loadTexture(url, { flipY }) {
 }
 
 function frameDuration() {
-  return params.frames / params.fps
+  return params.frames / effFps()
+}
+
+// Effective playback rate: STEP is the export stride, so the viewer
+// advances at base fps / step (same duration as a full-rate bake).
+function effFps() {
+  return params.fps / Math.max(1, params.step)
 }
 
 async function reloadVat({ frameCamera }) {
@@ -112,8 +162,8 @@ async function reloadVat({ frameCamera }) {
 
     if (vatRoot) scene.remove(vatRoot)
     if (vat) {
-      vat.uniforms.posTexture?.value.dispose()
-      vat.uniforms.normalTexture?.value.dispose()
+      vat.uniforms.posTexture?.value?.dispose?.()
+      vat.uniforms.normalTexture?.value?.dispose?.()
       vat.material.dispose()
     }
     const verts = nextMesh.geometry.getAttribute('position').count
@@ -144,24 +194,38 @@ async function reloadVat({ frameCamera }) {
       Object.assign(params, {
         frames: meta.frameCount,
         fps: meta.fps ?? params.fps,
+        step: meta.frameStep ?? 1,
         numWraps: 1,
         positionMode: meta.positionMode ?? 'offsets',
         normalize: meta.normalize ?? false,
         minOffset: meta.minOffset ?? 0,
         maxOffset: meta.maxOffset ?? 1,
       })
-      vat = createVatStorageMaterial({ offsets, normals, meta })
+      vat = createVatStorageMaterial({ offsets, normals, meta, params })
       lastPosTex = lastNrmTex = null
-      preview = null
+      preview = buildStoragePreview({
+        offsets: offsets.array,
+        normals: normals?.array ?? null,
+        meta,
+        posCanvas: document.querySelector('#preview-pos'),
+        nrmCanvas: document.querySelector('#preview-nrm'),
+        posDims: document.querySelector('#preview-pos-dims'),
+        nrmDims: document.querySelector('#preview-nrm-dims'),
+        statusEl: document.querySelector('#preview-status'),
+      })
       syncPanelInputs()
-      setStatus([`storage ${verts} verts x ${params.frames} frames (.bin)`, ...(uvWarn ? [`⚠ ${uvWarn}`] : [])])
+      storageSummary = `storage ${verts} verts x ${params.frames} frames (.bin)${normals ? '' : ' | no normals (geometry)'}`
+      setStatus([storageSummary + storagePlaybackSuffix(), ...(uvWarn ? [`⚠ ${uvWarn}`] : [])])
     } else {
       if (!nextMesh.geometry.getAttribute('uv1') && !nextMesh.geometry.getAttribute('uv')) {
         throw new Error('Mesh has no UVs (vertex_anim expected as second UV set)')
       }
+      if (!sources.positions) throw new Error('Drop a positions texture below (slot 02)')
       const [positions, normals] = await Promise.all([
-        loadTexture(sources.positions, { flipY: false }),
-        loadTexture(sources.normals, { flipY: true }),
+        // EXR arrives pre-flipped from EXRLoader (flipY=false avoids a
+        // double flip); PNG needs the upload flip to land rows like EXR.
+        loadTexture(sources.positions, { flipY: !sources.positions.toLowerCase().endsWith('.exr') }),
+        sources.normals ? loadTexture(sources.normals, { flipY: true }) : null,
       ])
       const texW = positions.image.width
       const texH = positions.image.height
@@ -169,7 +233,7 @@ async function reloadVat({ frameCamera }) {
       vat = createVatMaterial({ positionTexture: positions, normalTexture: normals, params })
       syncVatUniforms(vat.uniforms, params)
       syncPanelInputs()
-      setStatus([`${params.wrapMode} ${texW}x${texH} | verts ${verts} | frames ${params.frames} x ${params.numWraps} wraps`])
+      setStatus([`${params.wrapMode} ${texW}x${texH} | verts ${verts} | frames ${params.frames} x ${params.numWraps} wraps${normals ? '' : ' | no normals (geometry)'}`])
       lastPosTex = positions
       lastNrmTex = normals
       refreshPreview()
@@ -181,6 +245,7 @@ async function reloadVat({ frameCamera }) {
 
     if (frameCamera) frameMeshCamera()
     overlay.hidden = true
+    refreshSlotSizes().catch(() => {})
   } catch (error) {
     showError(`Could not load VAT assets: ${error.message}`)
     throw error
@@ -188,7 +253,7 @@ async function reloadVat({ frameCamera }) {
 }
 
 function refreshPreview() {
-  if (!lastPosTex || !lastNrmTex) return
+  if (!lastPosTex) return
   preview = buildPreview({
       posTexture: lastPosTex,
       normalTexture: lastNrmTex,
@@ -221,7 +286,7 @@ function applyExample(ex) {
     time: 0,
   })
   for (const [slot, url] of Object.entries(sources)) {
-    document.querySelector(`[data-slot-label="${slot}"]`).textContent = url ? url.split('/').pop() : '—'
+    setSlotLabel(slot, url ? decodeURIComponent(url.split('/').pop()) : '—', null)
   }
 }
 
@@ -229,17 +294,47 @@ async function bootExamples() {
   const res = await fetch('/examples.json')
   if (!res.ok) throw new Error('no examples manifest')
   EXAMPLES = (await res.json()).examples
+  const wanted = new URLSearchParams(location.search).get('ex')
+  const chosen = EXAMPLES.find((e) => e.id === wanted) ?? EXAMPLES[0]
+  applyExample(chosen)
+  filterExamples(chosen.id)
+}
+
+function hasDroppedSources() {
+  return Object.values(sources).some((u) => u?.startsWith('blob:'))
+}
+
+// Show only the examples matching the current SOURCE backend. Auto-loads
+// the first match when the current pick becomes incompatible — unless the
+// user dropped custom files, which stay loaded (shown as CUSTOM DROP).
+function filterExamples(preferId) {
+  const cur = preferId ?? exampleSelect.value
   exampleSelect.innerHTML = ''
-  for (const ex of EXAMPLES) {
+  const dropped = hasDroppedSources()
+  if (dropped) {
+    const opt = document.createElement('option')
+    opt.value = '__drop'
+    opt.textContent = 'CUSTOM DROP'
+    exampleSelect.appendChild(opt)
+  }
+  const list = EXAMPLES.filter((e) => (e.storage ? 'storage' : 'texture') === params.backend)
+  for (const ex of list) {
     const opt = document.createElement('option')
     opt.value = ex.id
     opt.textContent = ex.label
     exampleSelect.appendChild(opt)
   }
-  const wanted = new URLSearchParams(location.search).get('ex')
-  const chosen = EXAMPLES.find((e) => e.id === wanted) ?? EXAMPLES[0]
-  applyExample(chosen)
-  exampleSelect.value = chosen.id
+  if (list.some((e) => e.id === cur)) {
+    exampleSelect.value = cur
+    return
+  }
+  if (dropped || !list.length) {
+    if (dropped) exampleSelect.value = '__drop'
+    return
+  }
+  exampleSelect.value = list[0].id
+  applyExample(list[0])
+  reloadVat({ frameCamera: true }).catch(() => {})
 }
 
 exampleSelect.addEventListener('change', () => {
@@ -265,11 +360,19 @@ function tickPlayback(dt) {
   if (params.playing) params.time += dt * (params.reverse ? -1 : 1)
   const total = frameDuration()
   params.time = ((params.time % total) + total) % total
-  if (vat) vat.uniforms.frame.value = params.time * params.fps
+  if (vat) vat.uniforms.frame.value = params.time * effFps()
 }
 
 // --- Left panel bindings: every input writes params, syncs uniforms, refreshes ranges.
 const panelInputs = [...document.querySelectorAll('[data-param]')]
+
+// (?) markers show a tooltip on hover: don't let them toggle their row's
+// checkbox or focus its input when clicked.
+for (const hint of document.querySelectorAll('.hint')) {
+  for (const event of ['mousedown', 'click']) {
+    hint.addEventListener(event, (e) => { e.preventDefault(); e.stopPropagation() })
+  }
+}
 
 function syncPanelInputs() {
   for (const input of panelInputs) {
@@ -278,6 +381,15 @@ function syncPanelInputs() {
     else if (input.tagName === 'SELECT') input.value = params[key]
     else input.value = params[key]
     if (key === 'time') input.max = frameDuration()
+    // Backend-scoped rows: storage hides texture-only bake params and
+    // vice versa (textures already lerp via TEX_FILTER).
+    const scoped = input.closest('[data-backends]')
+    if (scoped) scoped.hidden = !scoped.dataset.backends.split(' ').includes(params.backend)
+  }
+  // Asset slots follow the same rule (storage: GLB+BIN+JSON,
+  // texture: GLB+POSITIONS+NORMALS).
+  for (const slot of document.querySelectorAll('[data-slot][data-backends]')) {
+    slot.hidden = !slot.dataset.backends.split(' ').includes(params.backend)
   }
 }
 
@@ -287,6 +399,7 @@ for (const input of panelInputs) {
     if (input.type === 'checkbox') params[key] = input.checked
     else if (input.type === 'number' || input.type === 'range') params[key] = Number(input.value)
     else params[key] = input.value
+    if (key === 'step') params.step = Math.max(1, Math.round(params.step) || 1)
     if (key === 'frames' || key === 'fps') {
       const total = frameDuration()
       params.time = Math.min(params.time, total)
@@ -298,16 +411,23 @@ for (const input of panelInputs) {
       params.numWraps = params.wrapMode === 'none' ? 1 : Math.max(1, Math.round(params.texHeight / params.frames))
       refreshPreview()
     }
-    if (params.backend === 'storage' && vat && (key === 'positionMode' || key === 'normalize' || key === 'minOffset' || key === 'maxOffset')) {
-      vat.uniforms.isOffsets.value = params.positionMode === 'offsets'
-      vat.uniforms.denormalize.value = params.normalize
-      vat.uniforms.minOffset.value = params.minOffset
-      vat.uniforms.maxOffset.value = params.maxOffset
+    if (params.backend === 'storage' && vat) {
+      if (key === 'positionMode' || key === 'normalize' || key === 'minOffset' || key === 'maxOffset'
+        || key === 'step' || key === 'smooth') {
+        syncVatStorageUniforms(vat.uniforms, params)
+      }
+      if (key === 'step' || key === 'smooth' || key === 'fps') setStatus([storageSummary + storagePlaybackSuffix()])
     }
-    if ((key === "texFilter" || key === "backend") && vat) {
+    if ((key === "texFilter") && vat) {
       reloadVat({ frameCamera: false }).catch(() => {})
     }
-    if (vat) syncVatUniforms(vat.uniforms, params)
+    if (key === "backend" && vat) {
+      // Refilter the example list (auto-loads a matching one); with
+      // dropped files or no manifest, retry current sources instead.
+      filterExamples()
+      if (hasDroppedSources() || !EXAMPLES.length) reloadVat({ frameCamera: false }).catch(() => {})
+    }
+    if (vat && params.backend !== 'storage') syncVatUniforms(vat.uniforms, params)
     syncPanelInputs()
   })
 }
@@ -315,17 +435,128 @@ for (const input of panelInputs) {
 document.querySelector('#btn-frame-mesh').addEventListener('click', frameMeshCamera)
 document.querySelector('#btn-reload').addEventListener('click', () => reloadVat({ frameCamera: false }))
 
+// --- Bottom timeline transport (Blender-like) ---
+function stepFrame(dir) {
+  const total = frameDuration()
+  params.time = (((params.time + dir / effFps()) % total) + total) % total
+  if (vat) vat.uniforms.frame.value = params.time * effFps()
+}
+btnPlay.addEventListener('click', () => { params.playing = !params.playing })
+btnReverse.addEventListener('click', () => { params.reverse = !params.reverse })
+document.querySelector('#btn-prev').addEventListener('click', () => stepFrame(-1))
+document.querySelector('#btn-next').addEventListener('click', () => stepFrame(1))
+// --- Keyboard shortcuts (ignored when typing in a field) ---
+// space play/pause · ←/→ step frame · shift+←/→ ±10f · home/end first/last
+// R reverse · F frame mesh · L reload · H panel · T textures
+function togglePlay() { params.playing = !params.playing }
+const mqMobile = matchMedia('(max-width: 768px)')
+function togglePanel() {
+  if (mqMobile.matches) document.querySelector('#panel').classList.toggle('open')
+  else document.body.classList.toggle('hide-panel')
+}
+function toggleTexpreview() {
+  if (mqMobile.matches) document.querySelector('#texpreview').classList.toggle('open')
+  else document.body.classList.toggle('hide-tex')
+}
+addEventListener('keydown', (e) => {
+  if (/INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName ?? '')) return
+  if (e.metaKey || e.ctrlKey || e.altKey) return
+  const k = e.key
+  if (e.code === 'Space') { e.preventDefault(); togglePlay() }
+  else if (k === 'ArrowLeft' || k === 'ArrowRight') {
+    e.preventDefault()
+    stepFrame((k === 'ArrowRight' ? 1 : -1) * (e.shiftKey ? 10 : 1))
+  }
+  else if (k === 'Home') { e.preventDefault(); params.time = 0 }
+  else if (k === 'End') { e.preventDefault(); params.time = frameDuration() - 1 / effFps() }
+  else if (k === 'r' || k === 'R') params.reverse = !params.reverse
+  else if (k === 'f' || k === 'F') frameMeshCamera()
+  else if (k === 'l' || k === 'L') reloadVat({ frameCamera: false }).catch(() => {})
+  else if (k === 'h' || k === 'H') togglePanel()
+  else if (k === 't' || k === 'T') toggleTexpreview()
+  else return
+  syncPanelInputs()
+})
+
+// --- Resizable left panel (width persists across visits) ---
+const panelResize = document.querySelector('#panel-resize')
+try {
+  const savedW = Number(localStorage.getItem('vat-panel-w'))
+  if (savedW >= 220 && savedW <= 560) {
+    document.documentElement.style.setProperty('--panel-w', `${savedW}px`)
+  }
+} catch { /* private mode: fixed width */ }
+panelResize.addEventListener('pointerdown', (e) => {
+  e.preventDefault()
+  panelResize.classList.add('drag')
+  panelResize.setPointerCapture(e.pointerId)
+  const move = (ev) => {
+    const w = Math.min(560, Math.max(220, ev.clientX))
+    document.documentElement.style.setProperty('--panel-w', `${w}px`)
+  }
+  const up = () => {
+    panelResize.classList.remove('drag')
+    panelResize.removeEventListener('pointermove', move)
+    panelResize.removeEventListener('pointerup', up)
+    try {
+      const w = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--panel-w'), 10)
+      localStorage.setItem('vat-panel-w', String(w))
+    } catch { /* ignore */ }
+  }
+  panelResize.addEventListener('pointermove', move)
+  panelResize.addEventListener('pointerup', up)
+})
+
 // --- Responsive: off-canvas panel toggle (visible on <=768px via CSS) ---
 const panel = document.querySelector('#panel')
-document.querySelector('#panel-toggle').addEventListener('click', () => panel.classList.toggle('open'))
+document.querySelector('#panel-toggle').addEventListener('click', togglePanel)
 const texpreview = document.querySelector('#texpreview')
-document.querySelector('#texpreview-toggle').addEventListener('click', () => texpreview.classList.toggle('open'))
+document.querySelector('#texpreview-toggle').addEventListener('click', toggleTexpreview)
+// In-panel H / T buttons: same action as the keyboard shortcuts.
+document.querySelector('#btn-hide-panel').addEventListener('click', togglePanel)
+document.querySelector('#btn-hide-tex').addEventListener('click', toggleTexpreview)
+
+// --- Resizable texture preview (width persists across visits) ---
+const texResize = document.querySelector('#texpreview-resize')
+try {
+  const savedT = Number(localStorage.getItem('vat-texpw'))
+  if (savedT >= 140 && savedT <= 520) {
+    document.documentElement.style.setProperty('--texpw', `${savedT}px`)
+  }
+} catch { /* private mode: fixed width */ }
+texResize.addEventListener('pointerdown', (e) => {
+  e.preventDefault()
+  texResize.classList.add('drag')
+  texResize.setPointerCapture(e.pointerId)
+  const startX = e.clientX
+  const startW = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--texpw'), 10) || 200
+  const move = (ev) => {
+    const w = Math.min(520, Math.max(140, startW + (startX - ev.clientX)))
+    document.documentElement.style.setProperty('--texpw', `${w}px`)
+  }
+  const up = () => {
+    texResize.classList.remove('drag')
+    texResize.removeEventListener('pointermove', move)
+    texResize.removeEventListener('pointerup', up)
+    try {
+      const w = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--texpw'), 10)
+      localStorage.setItem('vat-texpw', String(w))
+    } catch { /* ignore */ }
+  }
+  texResize.addEventListener('pointermove', move)
+  texResize.addEventListener('pointerup', up)
+})
 
 // --- Drag & drop + file pickers ---
 function setSource(slot, file) {
   if (sources[slot]?.startsWith('blob:')) URL.revokeObjectURL(sources[slot])
   sources[slot] = URL.createObjectURL(file)
-  document.querySelector(`[data-slot-label="${slot}"]`).textContent = file.name
+  setSlotLabel(slot, file.name, file.size)
+  // Dropped slot dictates the backend (a .bin without storage mode fails).
+  if (slot === 'storage' || slot === 'storageMeta') params.backend = 'storage'
+  if (slot === 'positions' || slot === 'normals') params.backend = 'texture'
+  syncPanelInputs()
+  filterExamples('__drop')
   reloadVat({ frameCamera: slot === 'mesh' }).catch(() => {})
 }
 
@@ -354,6 +585,23 @@ for (const card of document.querySelectorAll('[data-slot]')) {
   })
 }
 
+// --- Per-slot clear (×): empties the slot and reloads with the rest.
+// Clearing normals falls back to geometry normals; clearing anything
+// else errors loudly until a file is dropped again.
+for (const btn of document.querySelectorAll('[data-clear]')) {
+  for (const event of ['mousedown', 'click']) {
+    btn.addEventListener(event, (e) => e.stopPropagation())
+  }
+  btn.addEventListener('click', (e) => {
+    e.preventDefault()
+    const slot = btn.dataset.clear
+    if (sources[slot]?.startsWith('blob:')) URL.revokeObjectURL(sources[slot])
+    sources[slot] = ''
+    setSlotLabel(slot, '—', null)
+    reloadVat({ frameCamera: false }).catch(() => {})
+  })
+}
+
 // --- Main loop ---
 syncPanelInputs()
 const timer = new Timer()
@@ -363,7 +611,13 @@ renderer.setAnimationLoop(timestamp => {
   const timeInput = panelInputs.find((input) => input.dataset.param === 'time')
   if (document.activeElement !== timeInput) timeInput.value = params.time
   const frameIndex = vat ? ((Math.floor(vat.uniforms.frame.value) % params.frames) + params.frames) % params.frames : 0
-  frameReadout.textContent = vat ? String(frameIndex) : '–'
+  frameReadout.textContent = vat
+    ? `${String(frameIndex).padStart(String(params.frames).length, '0')} / ${params.frames}`
+    : '–'
+  timeReadout.textContent = vat ? `${params.time.toFixed(2)}s / ${frameDuration().toFixed(2)}s` : '–'
+  icoPlay.hidden = params.playing
+  icoPause.hidden = !params.playing
+  btnReverse.classList.toggle('on', params.reverse)
   if (preview && vat) preview.update(frameIndex)
   controls.update()
   renderer.render(scene, camera)
@@ -376,9 +630,9 @@ bootExamples()
     // ?frame=N deep-links a paused frame (testing / sharing).
     const f = new URLSearchParams(location.search).get('frame')
     if (f !== null && vat) {
-      params.time = Math.max(0, Number(f) || 0) / params.fps
+      params.time = Math.max(0, Number(f) || 0) / effFps()
       params.playing = false
-      vat.uniforms.frame.value = params.time * params.fps
+      vat.uniforms.frame.value = params.time * effFps()
       syncPanelInputs()
     }
   })

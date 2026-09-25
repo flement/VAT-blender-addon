@@ -1,0 +1,16 @@
+<!-- @license lucide-static v0.545.0 - ISC -->
+<svg
+  class="lucide lucide-pause"
+  xmlns="http://www.w3.org/2000/svg"
+  width="24"
+  height="24"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="square"
+  stroke-linejoin="miter"
+>
+  <rect x="14" y="3" width="5" height="18" />
+  <rect x="5" y="3" width="5" height="18" />
+</svg>

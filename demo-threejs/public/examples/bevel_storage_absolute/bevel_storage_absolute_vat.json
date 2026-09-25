@@ -1,0 +1,26 @@
+{
+  "format": "vat-storage/3",
+  "basename": "bevel_storage_absolute",
+  "positionMode": "absolutes",
+  "fps": 24,
+  "vertexCount": 96,
+  "frameCount": 60,
+  "layout": {
+    "offsets": "u16x3",
+    "normals": "oct8x2"
+  },
+  "order": "vertex-major",
+  "minOffset": -0.800000011920929,
+  "maxOffset": 0.8000006675720215,
+  "normalize": false,
+  "sparse": null,
+  "delta": {
+    "offsets": true,
+    "normals": false
+  },
+  "varint": {
+    "offsets": true,
+    "normals": false
+  },
+  "compression": "gzip"
+}

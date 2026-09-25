@@ -1,0 +1,31 @@
+{
+  "format": "vat-storage/3",
+  "basename": "solidify_storage_absolute",
+  "positionMode": "absolutes",
+  "fps": 24,
+  "vertexCount": 72,
+  "frameCount": 60,
+  "layout": {
+    "offsets": "u16x3",
+    "normals": "oct8x2"
+  },
+  "order": "vertex-major",
+  "minOffset": -1.0,
+  "maxOffset": 1.0,
+  "normalize": false,
+  "sparse": {
+    "bitmap": "//8PAPD/////",
+    "staticCount": 16,
+    "offsets": true,
+    "normals": false
+  },
+  "delta": {
+    "offsets": true,
+    "normals": false
+  },
+  "varint": {
+    "offsets": true,
+    "normals": false
+  },
+  "compression": "gzip"
+}

@@ -1,0 +1,26 @@
+{
+  "format": "vat-storage/3",
+  "basename": "shrinkwrap_storage_absolute",
+  "positionMode": "absolutes",
+  "fps": 24,
+  "vertexCount": 64,
+  "frameCount": 60,
+  "layout": {
+    "offsets": "u16x3",
+    "normals": "oct8x2"
+  },
+  "order": "vertex-major",
+  "minOffset": -0.9838171005249023,
+  "maxOffset": 0.9838161468505859,
+  "normalize": false,
+  "sparse": null,
+  "delta": {
+    "offsets": true,
+    "normals": true
+  },
+  "varint": {
+    "offsets": true,
+    "normals": true
+  },
+  "compression": "gzip"
+}

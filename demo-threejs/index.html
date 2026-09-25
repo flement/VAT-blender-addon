@@ -9,64 +9,81 @@
   </head>
   <body>
     <div id="app"></div>
-    <button id="panel-toggle" type="button" aria-label="Toggle panel">☰</button>
+    <button id="panel-toggle" type="button" aria-label="Toggle panel" title="Toggle panel [H]"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M4 5h16" /><path d="M4 12h16" /><path d="M4 19h16" /></svg></button>
     <aside id="panel">
+      <div id="panel-resize" title="Resize panel"></div>
+      <div class="panel-top"><button class="close-btn" id="btn-hide-panel" type="button" title="Hide panel [H]" aria-label="Hide panel">×</button></div>
            <section>
         <h2>01 / ASSETS</h2>
-        <label class="row"><span>EXAMPLE</span><select id="example-select"></select></label>
-        <div class="slot" data-slot="mesh" role="button" tabindex="0">
-          <span class="slot-name">01 — MESH [.GLB]</span>
-          <span class="slot-file" data-slot-label="mesh">vat_test.glb</span>
-          <input type="file" accept=".glb,.gltf" hidden />
-        </div>
-        <div class="slot" data-slot="positions" role="button" tabindex="0">
-          <span class="slot-name">02 — POSITIONS [.EXR/.PNG]</span>
-          <span class="slot-file" data-slot-label="positions">positions.exr</span>
-          <input type="file" accept=".exr,.png" hidden />
-        </div>
-        <div class="slot" data-slot="normals" role="button" tabindex="0">
-          <span class="slot-name">03 — NORMALS [.PNG, OPT.]</span>
-          <span class="slot-file" data-slot-label="normals">normals.png</span>
-          <input type="file" accept=".png" hidden />
-        </div>
-        <div class="slot" data-slot="storage" role="button" tabindex="0">
-          <span class="slot-name">04 — VAT BIN [.BIN]</span>
-          <span class="slot-file" data-slot-label="storage">—</span>
-          <input type="file" accept=".bin" hidden />
-        </div>
-        <div class="slot" data-slot="storageMeta" role="button" tabindex="0">
-          <span class="slot-name">05 — VAT META [.JSON]</span>
-          <span class="slot-file" data-slot-label="storageMeta">—</span>
-          <input type="file" accept=".json" hidden />
-        </div>
-        <pre id="status">Loading…</pre>
-      </section>
-
-      <section>
-        <h2>02 / BAKE</h2>
-        <label class="row"><span>SOURCE</span>
+        <label class="row"><span>SOURCE <i class="hint" title="Texture: samples POSITIONS/NORMALS images. Storage: reads _vat.bin + _vat.json buffers. Switching refilters the example list.">?</i></span>
           <select data-param="backend">
             <option value="texture" selected>vat texture</option>
             <option value="storage">storage buffer</option>
           </select>
         </label>
-        <label class="row"><span>WRAP</span>
+        <label class="row"><span>EXAMPLE <i class="hint" title="Preset bake from examples.json (?ex=id deep-links it). Dropping files replaces it with CUSTOM DROP.">?</i></span><select id="example-select"></select></label>
+        <div class="slot-row">
+          <div class="slot" data-slot="mesh" role="button" tabindex="0">
+            <span class="slot-name">01 — MESH [.GLB] <i class="hint" title="GLB mesh carrying bake ids on uv1. Click or drop a .glb/.gltf.">?</i></span>
+            <span class="slot-file" data-slot-label="mesh">vat_test.glb</span>
+            <input type="file" accept=".glb,.gltf" hidden />
+          </div>
+          <button type="button" class="slot-clear" data-clear="mesh" title="Remove this file" aria-label="Remove mesh file">×</button>
+        </div>
+        <div class="slot-row">
+          <div class="slot" data-slot="positions" data-backends="texture" role="button" tabindex="0">
+            <span class="slot-name">02 — POSITIONS [.EXR/.PNG] <i class="hint" title="Per-frame offsets/absolutes image: EXR half-float, or normalized PNG when NORMALIZE is on. Click or drop.">?</i></span>
+            <span class="slot-file" data-slot-label="positions">positions.exr</span>
+            <input type="file" accept=".exr,.png" hidden />
+          </div>
+          <button type="button" class="slot-clear" data-clear="positions" title="Remove this file" aria-label="Remove positions file">×</button>
+        </div>
+        <div class="slot-row">
+          <div class="slot" data-slot="normals" data-backends="texture" role="button" tabindex="0">
+            <span class="slot-name">03 — NORMALS [.PNG, OPT.] <i class="hint" title="Optional baked normals PNG (decoded as tex*2-1, rows mirrored vs positions). Without it, geometry normals apply. Click or drop, × to remove.">?</i></span>
+            <span class="slot-file" data-slot-label="normals">normals.png</span>
+            <input type="file" accept=".png" hidden />
+          </div>
+          <button type="button" class="slot-clear" data-clear="normals" title="Remove this file (geometry normals apply)" aria-label="Remove normals file">×</button>
+        </div>
+        <div class="slot-row">
+          <div class="slot" data-slot="storage" data-backends="storage" role="button" tabindex="0">
+            <span class="slot-name">02 — VAT BIN [.BIN] <i class="hint" title="Packed offsets + octahedral normals, vertex-major, gzipped. Click or drop a .bin.">?</i></span>
+            <span class="slot-file" data-slot-label="storage">—</span>
+            <input type="file" accept=".bin" hidden />
+          </div>
+          <button type="button" class="slot-clear" data-clear="storage" title="Remove this file" aria-label="Remove storage file">×</button>
+        </div>
+        <div class="slot-row">
+          <div class="slot" data-slot="storageMeta" data-backends="storage" role="button" tabindex="0">
+            <span class="slot-name">03 — VAT META [.JSON] <i class="hint" title="Sidecar: vertex/frame counts, layouts, MIN/MAX range, fps + step. Click or drop a .json.">?</i></span>
+            <span class="slot-file" data-slot-label="storageMeta">—</span>
+            <input type="file" accept=".json" hidden />
+          </div>
+          <button type="button" class="slot-clear" data-clear="storageMeta" title="Remove this file" aria-label="Remove meta file">×</button>
+        </div>
+        <pre id="status" title="Loaded layout summary (size, verts, frames x wraps) or BIN/GLB mismatch warnings.">Loading…</pre>
+      </section>
+
+      <section>
+        <h2>02 / BAKE</h2>
+        <label class="row" data-backends="texture"><span>WRAP <i class="hint" title="Mirror of the Blender bake tab: re-interprets loaded textures. none = single block, wrap = padded blocks, wrap_crop = exact W x F*K.">?</i></span>
           <select data-param="wrapMode">
             <option value="none">none</option>
             <option value="wrap">wrap</option>
             <option value="wrap_crop" selected>wrap_crop</option>
           </select>
         </label>
-        <label class="row"><span>FRAMES</span><input type="number" data-param="frames" min="1" max="1024" step="1" /></label>
-        <label class="row"><span>MODE</span>
+        <label class="row" data-backends="texture"><span>FRAMES <i class="hint" title="Frame count F. Shader row = block*F + (F-1-f). Changing it re-derives the wrap count.">?</i></span><input type="number" data-param="frames" min="1" max="1024" step="1" /></label>
+        <label class="row"><span>MODE <i class="hint" title="offsets = mesh + sampled delta. absolutes = sampled value replaces the mesh position.">?</i></span>
           <select data-param="positionMode">
             <option selected>offsets</option><option>absolutes</option>
           </select>
         </label>
-        <label class="row check"><span>NORMALIZE&gt;PNG</span><input type="checkbox" data-param="normalize" /></label>
-        <label class="row"><span>MIN_OFF</span><input type="number" data-param="minOffset" step="any" /></label>
-        <label class="row"><span>MAX_OFF</span><input type="number" data-param="maxOffset" step="any" /></label>
-        <label class="row"><span>TEX_FILTER</span>
+        <label class="row check"><span>NORMALIZE&gt;PNG <i class="hint" title="PNG path only: bake remaps offsets to 0-1, shader denormalizes with MIN/MAX. Off for EXR half-float.">?</i></span><input type="checkbox" data-param="normalize" /></label>
+        <label class="row"><span>MIN_OFF <i class="hint" title="Baked offsets range. Auto-filled per example. Shader: raw*(MAX-MIN)+MIN. Storage .bin always carries its own range.">?</i></span><input type="number" data-param="minOffset" step="any" /></label>
+        <label class="row"><span>MAX_OFF <i class="hint" title="Baked offsets range. Auto-filled per example. Shader: raw*(MAX-MIN)+MIN. Storage .bin always carries its own range.">?</i></span><input type="number" data-param="maxOffset" step="any" /></label>
+        <label class="row" data-backends="texture"><span>TEX_FILTER <i class="hint" title="Texture sampling: nearest = crisp per-texel, linear = smoothed.">?</i></span>
           <select data-param="texFilter">
             <option value="nearest" selected>nearest (crisp)</option>
             <option value="linear">linear (smooth)</option>
@@ -76,27 +93,38 @@
 
       <section>
         <h2>03 / PLAYBACK</h2>
-        <label class="row check"><span>PLAY</span><input type="checkbox" data-param="playing" /></label>
-        <label class="row"><span>TIME [S]</span><input type="range" data-param="time" min="0" step="0.001" /></label>
-        <label class="row"><span>FPS</span><input type="number" data-param="fps" min="1" max="120" step="1" /></label>
-        <label class="row check"><span>REVERSE</span><input type="checkbox" data-param="reverse" /></label>
-        <div class="row"><span>FRAME</span><output id="frame-readout">0</output></div>
+        <label class="row"><span>FPS <i class="hint" title="Base rate. Texture loops frames/FPS seconds; storage plays at FPS/STEP (same duration as a full-rate bake).">?</i></span><input type="number" data-param="fps" min="1" max="120" step="1" /></label>
+        <label class="row" data-backends="storage"><span>STEP <i class="hint" title="Export stride: samples every STEP-th baked row, effective rate = FPS/STEP.">?</i></span><input type="number" data-param="step" min="1" max="60" step="1" /></label>
+        <label class="row check" data-backends="storage"><span>SMOOTH <i class="hint" title="Lerp between sampled rows (textures use TEX_FILTER instead).">?</i></span><input type="checkbox" data-param="smooth" checked /></label>
         <div class="btn-row">
-          <button id="btn-frame-mesh" type="button">FRAME_MESH</button>
-          <button id="btn-reload" type="button">RELOAD</button>
+          <button id="btn-frame-mesh" type="button" title="Fit the camera to the mesh bounds. [F]">FRAME_MESH <i class="hint" title="Fit the camera to the mesh bounds.">?</i></button>
+          <button id="btn-reload" type="button" title="Reload current sources with current settings, without moving the camera. [L]">RELOAD <i class="hint" title="Reload current sources with current settings, without moving the camera.">?</i></button>
         </div>
       </section>
       <div class="foot">
+        <a href="https://extensions.blender.org/add-ons/vat/" target="_blank" rel="noopener" class="issue-link" title="Blender VAT plugin (bake your own meshes)">Blender plugin</a>
+        <a href="https://github.com/flanb/VAT-blender-plugin" target="_blank" rel="noopener" class="issue-link" title="Blender VAT plugin (bake your own meshes)">Github</a>
         <a href="https://github.com/flanb/VAT-blender-plugin/issues/new" target="_blank" rel="noopener" class="issue-link" title="Report an issue">Need help?</a>
       </div>
     </aside>
-    <button id="texpreview-toggle" type="button" aria-label="Toggle textures">TEX</button>
+    <button id="texpreview-toggle" type="button" aria-label="Toggle textures" title="Toggle textures [T]"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><rect width="18" height="18" x="3" y="3" /><circle cx="9" cy="9" r="2" /><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" /></svg></button>
+    <footer id="timeline" aria-label="Playback timeline">
+      <button id="btn-play" type="button" title="Play / pause [space]"><span data-icon="pause"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><rect x="14" y="3" width="5" height="18" /><rect x="5" y="3" width="5" height="18" /></svg></span><span data-icon="play" hidden><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z" /></svg></span></button>
+      <button id="btn-prev" type="button" title="Previous frame [←]"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M17.971 4.285A2 2 0 0 1 21 6v12a2 2 0 0 1-3.029 1.715l-9.997-5.998a2 2 0 0 1-.003-3.432z" /><path d="M3 20V4" /></svg></button>
+      <button id="btn-next" type="button" title="Next frame [→]"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="M21 4v16" /><path d="M6.029 4.285A2 2 0 0 0 3 6v12a2 2 0 0 0 3.029 1.715l9.997-5.998a2 2 0 0 0 .003-3.432z" /></svg></button>
+      <button id="btn-reverse" type="button" title="Reverse playback direction [R]"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter"><path d="m16 3 4 4-4 4" /><path d="M20 7H4" /><path d="m8 21-4-4 4-4" /><path d="M4 17h16" /></svg></button>
+      <input id="time-slider" type="range" data-param="time" min="0" step="0.001" aria-label="Time" title="Scrub time in seconds (0 to frames/effective-fps). ?frame=N deep-links a paused frame." />
+      <output id="frame-readout" title="Current / total frames">0 / 0</output>
+      <output id="time-readout" title="Current / total seconds">0.00s</output>
+    </footer>
     <div id="texpreview">
-      <div class="prev-label">POSITIONS <span id="preview-pos-dims"></span></div>
-      <canvas id="preview-pos"></canvas>
-      <div class="prev-label">NORMALS <span id="preview-nrm-dims"></span></div>
-      <canvas id="preview-nrm"></canvas>
-      <pre id="preview-status">–</pre>
+      <div id="texpreview-resize" title="Resize preview"></div>
+      <div class="prev-top"><button class="close-btn" id="btn-hide-tex" type="button" title="Hide textures [T]" aria-label="Hide textures">×</button></div>
+      <div class="prev-label">POSITIONS <span id="preview-pos-dims"></span> <i class="hint" title="Positions in bake-memory order (top = mem row 0). White lines = rows sampled this frame.">?</i></div>
+      <canvas id="preview-pos" title="Positions texture, bake-memory order. Playhead lines mark sampled rows."></canvas>
+      <div class="prev-label">NORMALS <span id="preview-nrm-dims"></span> <i class="hint" title="Normals in bake-memory order (PNG rows flipped to match positions).">?</i></div>
+      <canvas id="preview-nrm" title="Normals texture, bake-memory order. Playhead lines mark sampled rows."></canvas>
+      <pre id="preview-status" title="Current frame, sampled memory rows, and offsets range.">–</pre>
     </div>
     <div id="overlay" class="overlay">
       <div id="overlay-text" class="overlay-card">Loading VAT assets…</div>

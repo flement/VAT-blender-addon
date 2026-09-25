@@ -1,16 +1,31 @@
 {
-  "format": "vat-storage/1",
+  "format": "vat-storage/3",
   "basename": "warp_storage",
   "positionMode": "offsets",
   "fps": 24,
   "vertexCount": 64,
   "frameCount": 60,
-  "minOffset": -4.76837158203125e-07,
-  "maxOffset": 0.36163049936294556,
-  "normalize": false,
   "layout": {
     "offsets": "u16x3",
     "normals": "oct8x2"
+  },
+  "order": "vertex-major",
+  "minOffset": -4.76837158203125e-07,
+  "maxOffset": 0.36163049936294556,
+  "normalize": false,
+  "sparse": {
+    "bitmap": "9Q8A/P8/AAA=",
+    "staticCount": 34,
+    "offsets": true,
+    "normals": true
+  },
+  "delta": {
+    "offsets": true,
+    "normals": true
+  },
+  "varint": {
+    "offsets": true,
+    "normals": true
   },
   "compression": "gzip"
 }

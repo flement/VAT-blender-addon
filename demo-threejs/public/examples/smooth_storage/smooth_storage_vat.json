@@ -1,16 +1,26 @@
 {
-  "format": "vat-storage/1",
+  "format": "vat-storage/3",
   "basename": "smooth_storage",
   "positionMode": "offsets",
   "fps": 24,
   "vertexCount": 64,
   "frameCount": 60,
-  "minOffset": 0.0,
-  "maxOffset": 0.5848820805549622,
-  "normalize": false,
   "layout": {
     "offsets": "u16x3",
     "normals": "oct8x2"
+  },
+  "order": "vertex-major",
+  "minOffset": 0.0,
+  "maxOffset": 0.5848820805549622,
+  "normalize": false,
+  "sparse": null,
+  "delta": {
+    "offsets": true,
+    "normals": true
+  },
+  "varint": {
+    "offsets": true,
+    "normals": true
   },
   "compression": "gzip"
 }

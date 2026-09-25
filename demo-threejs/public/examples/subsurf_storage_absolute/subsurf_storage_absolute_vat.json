@@ -1,0 +1,31 @@
+{
+  "format": "vat-storage/3",
+  "basename": "subsurf_storage_absolute",
+  "positionMode": "absolutes",
+  "fps": 24,
+  "vertexCount": 441,
+  "frameCount": 60,
+  "layout": {
+    "offsets": "u16x3",
+    "normals": "oct8x2"
+  },
+  "order": "vertex-major",
+  "minOffset": -1.0,
+  "maxOffset": 1.1840819120407104,
+  "normalize": false,
+  "sparse": {
+    "bitmap": "8P///w8A+I//+I///////////////////////37////f//////////////////////9//////wE=",
+    "staticCount": 32,
+    "offsets": true,
+    "normals": true
+  },
+  "delta": {
+    "offsets": true,
+    "normals": true
+  },
+  "varint": {
+    "offsets": true,
+    "normals": true
+  },
+  "compression": "gzip"
+}

@@ -1,16 +1,26 @@
 {
-  "format": "vat-storage/1",
+  "format": "vat-storage/3",
   "basename": "wave_storage",
   "positionMode": "offsets",
   "fps": 24,
   "vertexCount": 64,
   "frameCount": 60,
-  "minOffset": 0.0,
-  "maxOffset": 0.4967191815376282,
-  "normalize": false,
   "layout": {
     "offsets": "u16x3",
     "normals": "oct8x2"
+  },
+  "order": "vertex-major",
+  "minOffset": 0.0,
+  "maxOffset": 0.4967191815376282,
+  "normalize": false,
+  "sparse": null,
+  "delta": {
+    "offsets": false,
+    "normals": false
+  },
+  "varint": {
+    "offsets": false,
+    "normals": false
   },
   "compression": "gzip"
 }

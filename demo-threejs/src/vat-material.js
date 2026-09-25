@@ -60,9 +60,11 @@ export function createVatMaterial({ positionTexture, normalTexture, params }) {
   const denormOffset = rawOffset.xyz.mul(maxOffset.sub(minOffset)).add(minOffset)
   const vatOffset = select(denormalize, denormOffset, rawOffset.xyz)
 
-  const vatNormalUv = vec2(vatUv.x, float(1).sub(vatUv.y))
-  const vatNormalObject = varying(texture(normalTexture, vatNormalUv).mul(2).sub(1).xzy)
-  const vatNormal = transformNormalToView(vatNormalObject)
+  // Normals are optional: without a texture the geometry normals apply
+  // (lighting won't follow the deformation, but the mesh still animates).
+  const vatNormal = normalTexture
+    ? transformNormalToView(varying(texture(normalTexture, vec2(vatUv.x, float(1).sub(vatUv.y))).mul(2).sub(1).xzy))
+    : null
 
   const material = new MeshStandardNodeMaterial({
     color: 0x5588ff,
@@ -71,7 +73,7 @@ export function createVatMaterial({ positionTexture, normalTexture, params }) {
     side: 2,
   })
   material.positionNode = select(isOffsets, positionLocal.add(vatOffset.xzy), vatOffset.xzy)
-  material.normalNode = vatNormal
+  if (vatNormal) material.normalNode = vatNormal
 
   return { material, uniforms }
 }

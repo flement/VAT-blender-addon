@@ -1,0 +1,26 @@
+{
+  "format": "vat-storage/3",
+  "basename": "cloth_storage_absolute",
+  "positionMode": "absolutes",
+  "fps": 24,
+  "vertexCount": 100,
+  "frameCount": 60,
+  "layout": {
+    "offsets": "u16x3",
+    "normals": "oct8x2"
+  },
+  "order": "vertex-major",
+  "minOffset": -1.8951289653778076,
+  "maxOffset": 1.0,
+  "normalize": false,
+  "sparse": null,
+  "delta": {
+    "offsets": true,
+    "normals": true
+  },
+  "varint": {
+    "offsets": true,
+    "normals": true
+  },
+  "compression": "gzip"
+}

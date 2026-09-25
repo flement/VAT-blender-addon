@@ -1,9 +1,9 @@
 schema_version = "1.0.0"
 
 id = "VAT"
-version = "1.0.6"
-name = "Vertex Animation Texture Addon (VAT)"
-tagline = "Tools for vertex animation textures in Blender"
+version = "1.0.12"
+name = "Vertex Animation Toolkit (VAT + VAB)"
+tagline = "Bake mesh animation to Vertex Animation Textures or Buffers"
 maintainer = "flanb"
 type = "add-on"
 website = "https://github.com/flanb/VAT-blender-addon"
