@@ -21,10 +21,12 @@ import { StorageBufferAttribute } from 'three/webgpu'
  * File layout (gzipped, vertex-major [vertex][frame] so gzip sees temporal
  * coherence): offsets as 3 uint16 normalized over [minOffset, maxOffset]
  * (x, -y swizzled, no w), delta-coded per vertex (frame 0 absolute, then
- * i16 frame-to-frame diffs; meta.delta flags a fallback to absolute when
- * a spike exceeds i16), then normals octahedral-encoded to 2 signed bytes
+ * diffs in the abs width — i8 for u8, i16 for u16; meta.delta flags a
+ * fallback to absolute on spikes), then normals octahedral-encoded to 2 signed bytes
  * — 8 bytes/vertex/frame (vs 32 unpacked). F32 layouts are transposed but
- * never delta-coded. Decoding reverses exactly (integer cumsum, no drift).
+ * never delta-coded. Layout "none" stores no normal bytes: decode returns
+ * null normals and the material falls back to geometry normals.
+ * Decoding reverses exactly (integer cumsum, no drift).
  * Frame rows run last-frame-first like the texture
  * path, so frame f lives at row (F-1-f). Vertex id comes from uv1.x
  * (u = (i+0.5)/V), which survives the vertex splits of the glTF export;
@@ -50,17 +52,17 @@ export async function loadVatStorage(url, metaUrl) {
   return {
     meta,
     offsets: new StorageBufferAttribute(offsets, 4),
-    normals: new StorageBufferAttribute(normals, 4),
+    normals: normals ? new StorageBufferAttribute(normals, 4) : null,
   }
 }
 
 export function decodeVatBuffer(buf, meta) {
   const { vertexCount: V, frameCount: F } = meta
   const OFF = { u8x3: 1, u16x3: 2, f32x3: 4 }
-  const NRM = { oct8x2: 2, f32x3: 12 }
+  const NRM = { oct8x2: 2, f32x3: 12, none: 0 }
   const ob = OFF[meta.layout?.offsets]
   const nb = NRM[meta.layout?.normals]
-  if (!ob || !nb) {
+  if (!ob || nb === undefined) {
     throw new Error(`Unsupported storage layout '${JSON.stringify(meta.layout)}': re-export with the current VAT addon`)
   }
   const bpv = ob * 3 + nb
@@ -69,7 +71,7 @@ export function decodeVatBuffer(buf, meta) {
   if (view.byteLength < n * bpv) throw new Error(`Truncated storage buffer: ${view.byteLength} bytes for ${n} verts`)
   // Blocks stored vertex-major ([vertex][frame]). Integer offsets are
   // delta-coded per vertex when meta.delta.offsets is set (frame 0
-  // absolute, then i16 diffs; integer cumsum, bit-exact). Output rows
+  // absolute, then diffs in the abs width; integer cumsum, bit-exact). Output rows
   // are frame-major, last-frame-first.
   const span = meta.maxOffset - meta.minOffset || 1
   const lo = meta.layout.offsets
@@ -102,10 +104,11 @@ export function decodeVatBuffer(buf, meta) {
       offsets[i + 2] = readU(qz)
       offsets[i + 3] = 1
       for (let f = 1; f < F; f++) {
-        qx += view.getInt16(p, true)
-        qy += view.getInt16(p + 2, true)
-        qz += view.getInt16(p + 4, true)
-        p += 6
+        // Diffs reuse the abs width (u8 -> i8, u16 -> i16).
+        qx += ob === 1 ? view.getInt8(p) : view.getInt16(p, true)
+        qy += ob === 1 ? view.getInt8(p + ob) : view.getInt16(p + 2, true)
+        qz += ob === 1 ? view.getInt8(p + 2 * ob) : view.getInt16(p + 4, true)
+        p += 3 * ob
         i = at(f, v)
         offsets[i] = readU(qx)
         offsets[i + 1] = readU(qy)
@@ -128,6 +131,9 @@ export function decodeVatBuffer(buf, meta) {
       }
     }
   }
+  // Layout "none": no normal bytes in the buffer, null signals the
+  // geometry-normals fallback to material + preview.
+  if (nb === 0) return { offsets, normals: null }
   if (meta.layout.normals === 'f32x3') {
     for (let v = 0; v < V; v++) {
       for (let f = 0; f < F; f++) {
@@ -210,37 +216,30 @@ export function createVatStorageMaterial({ offsets, normals, meta, params = {} }
   // u = (i + 0.5) / V (NONE layout, forced in storage mode), shared by every
   // split copy of vertex i. Bake rows run last-frame-first.
   const vid = floor(attribute('uv1').x.mul(vertexCount))
-  // Playback sampling: STEP subsamples baked rows onto a coarser grid
-  // (previews a Step bake without re-baking), SMOOTH lerps between grid
-  // points (sample-and-hold when off). Next row wraps to 0, which also
-  // smooths the loop seam.
+  // Playback sampling: STEP subsamples baked rows onto a coarser grid,
+  // SMOOTH lerps between grid points (sample-and-hold when off).
   const frameM = mod(frame, frameCount)
   const frameG = floor(frameM.div(stepAmount)).mul(stepAmount)
   const frameF = frameM.sub(frameG).div(stepAmount).mul(smoothAmount)
-  const frameI = frameG
   // Next grid point, wrapping to 0 (exact loop seam, not mod arithmetic).
   const nextG = frameG.add(stepAmount)
   const frameJ = select(nextG.lessThan(frameCount), nextG, float(0))
-  const rowI = frameCount.sub(float(1)).sub(frameI).mul(vertexCount).add(vid)
-  const rowJ = frameCount.sub(float(1)).sub(frameJ).mul(vertexCount).add(vid)
-  const rawOffset = mix(
-    storage(offsets, 'vec4', V * F).element(rowI),
-    storage(offsets, 'vec4', V * F).element(rowJ),
-    frameF,
-  )
+  // Bake rows run last-frame-first: row = (F-1-f) * V + vid.
+  const rowOf = (fi) => frameCount.sub(float(1)).sub(fi).mul(vertexCount).add(vid)
+  const at = (attr, row) => storage(attr, 'vec4', V * F).element(row)
+  const rawOffset = mix(at(offsets, rowOf(frameG)), at(offsets, rowOf(frameJ)), frameF)
   const vatOffset = select(
     denormalize,
     rawOffset.xyz.mul(maxOffset.sub(minOffset)).add(minOffset),
     rawOffset.xyz,
   )
-  const vatNormalObject = varying(
-    normalize(mix(
-      storage(normals, 'vec4', V * F).element(rowI).xyz,
-      storage(normals, 'vec4', V * F).element(rowJ).xyz,
-      frameF,
-    ).xzy),
-  )
-  const vatNormal = transformNormalToView(vatNormalObject)
+  // Layout "none": no normals buffer, geometry normals apply (lighting
+  // won't follow the deformation, but the mesh still animates).
+  const vatNormal = normals
+    ? transformNormalToView(varying(
+        normalize(mix(at(normals, rowOf(frameG)).xyz, at(normals, rowOf(frameJ)).xyz, frameF).xzy),
+      ))
+    : null
 
   const basePosition = attribute('position')
   const material = new MeshStandardNodeMaterial({
@@ -250,7 +249,7 @@ export function createVatStorageMaterial({ offsets, normals, meta, params = {} }
     side: 2,
   })
   material.positionNode = select(isOffsets, basePosition.add(vatOffset.xzy), vatOffset.xzy)
-  material.normalNode = vatNormal
+  if (vatNormal) material.normalNode = vatNormal
 
   return { material, uniforms }
 }

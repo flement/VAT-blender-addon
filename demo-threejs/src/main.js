@@ -162,8 +162,8 @@ async function reloadVat({ frameCamera }) {
 
     if (vatRoot) scene.remove(vatRoot)
     if (vat) {
-      vat.uniforms.posTexture?.value.dispose()
-      vat.uniforms.normalTexture?.value.dispose()
+      vat.uniforms.posTexture?.value?.dispose?.()
+      vat.uniforms.normalTexture?.value?.dispose?.()
       vat.material.dispose()
     }
     const verts = nextMesh.geometry.getAttribute('position').count
@@ -205,7 +205,7 @@ async function reloadVat({ frameCamera }) {
       lastPosTex = lastNrmTex = null
       preview = buildStoragePreview({
         offsets: offsets.array,
-        normals: normals.array,
+        normals: normals?.array ?? null,
         meta,
         posCanvas: document.querySelector('#preview-pos'),
         nrmCanvas: document.querySelector('#preview-nrm'),
@@ -214,15 +214,16 @@ async function reloadVat({ frameCamera }) {
         statusEl: document.querySelector('#preview-status'),
       })
       syncPanelInputs()
-      storageSummary = `storage ${verts} verts x ${params.frames} frames (.bin)`
+      storageSummary = `storage ${verts} verts x ${params.frames} frames (.bin)${normals ? '' : ' | no normals (geometry)'}`
       setStatus([storageSummary + storagePlaybackSuffix(), ...(uvWarn ? [`⚠ ${uvWarn}`] : [])])
     } else {
       if (!nextMesh.geometry.getAttribute('uv1') && !nextMesh.geometry.getAttribute('uv')) {
         throw new Error('Mesh has no UVs (vertex_anim expected as second UV set)')
       }
+      if (!sources.positions) throw new Error('Drop a positions texture below (slot 02)')
       const [positions, normals] = await Promise.all([
         loadTexture(sources.positions, { flipY: false }),
-        loadTexture(sources.normals, { flipY: true }),
+        sources.normals ? loadTexture(sources.normals, { flipY: true }) : null,
       ])
       const texW = positions.image.width
       const texH = positions.image.height
@@ -230,7 +231,7 @@ async function reloadVat({ frameCamera }) {
       vat = createVatMaterial({ positionTexture: positions, normalTexture: normals, params })
       syncVatUniforms(vat.uniforms, params)
       syncPanelInputs()
-      setStatus([`${params.wrapMode} ${texW}x${texH} | verts ${verts} | frames ${params.frames} x ${params.numWraps} wraps`])
+      setStatus([`${params.wrapMode} ${texW}x${texH} | verts ${verts} | frames ${params.frames} x ${params.numWraps} wraps${normals ? '' : ' | no normals (geometry)'}`])
       lastPosTex = positions
       lastNrmTex = normals
       refreshPreview()
@@ -250,7 +251,7 @@ async function reloadVat({ frameCamera }) {
 }
 
 function refreshPreview() {
-  if (!lastPosTex || !lastNrmTex) return
+  if (!lastPosTex) return
   preview = buildPreview({
       posTexture: lastPosTex,
       normalTexture: lastNrmTex,
@@ -291,17 +292,47 @@ async function bootExamples() {
   const res = await fetch('/examples.json')
   if (!res.ok) throw new Error('no examples manifest')
   EXAMPLES = (await res.json()).examples
+  const wanted = new URLSearchParams(location.search).get('ex')
+  const chosen = EXAMPLES.find((e) => e.id === wanted) ?? EXAMPLES[0]
+  applyExample(chosen)
+  filterExamples(chosen.id)
+}
+
+function hasDroppedSources() {
+  return Object.values(sources).some((u) => u?.startsWith('blob:'))
+}
+
+// Show only the examples matching the current SOURCE backend. Auto-loads
+// the first match when the current pick becomes incompatible — unless the
+// user dropped custom files, which stay loaded (shown as CUSTOM DROP).
+function filterExamples(preferId) {
+  const cur = preferId ?? exampleSelect.value
   exampleSelect.innerHTML = ''
-  for (const ex of EXAMPLES) {
+  const dropped = hasDroppedSources()
+  if (dropped) {
+    const opt = document.createElement('option')
+    opt.value = '__drop'
+    opt.textContent = 'CUSTOM DROP'
+    exampleSelect.appendChild(opt)
+  }
+  const list = EXAMPLES.filter((e) => (e.storage ? 'storage' : 'texture') === params.backend)
+  for (const ex of list) {
     const opt = document.createElement('option')
     opt.value = ex.id
     opt.textContent = ex.label
     exampleSelect.appendChild(opt)
   }
-  const wanted = new URLSearchParams(location.search).get('ex')
-  const chosen = EXAMPLES.find((e) => e.id === wanted) ?? EXAMPLES[0]
-  applyExample(chosen)
-  exampleSelect.value = chosen.id
+  if (list.some((e) => e.id === cur)) {
+    exampleSelect.value = cur
+    return
+  }
+  if (dropped || !list.length) {
+    if (dropped) exampleSelect.value = '__drop'
+    return
+  }
+  exampleSelect.value = list[0].id
+  applyExample(list[0])
+  reloadVat({ frameCamera: true }).catch(() => {})
 }
 
 exampleSelect.addEventListener('change', () => {
@@ -333,6 +364,14 @@ function tickPlayback(dt) {
 // --- Left panel bindings: every input writes params, syncs uniforms, refreshes ranges.
 const panelInputs = [...document.querySelectorAll('[data-param]')]
 
+// (?) markers show a tooltip on hover: don't let them toggle their row's
+// checkbox or focus its input when clicked.
+for (const hint of document.querySelectorAll('.hint')) {
+  for (const event of ['mousedown', 'click']) {
+    hint.addEventListener(event, (e) => { e.preventDefault(); e.stopPropagation() })
+  }
+}
+
 function syncPanelInputs() {
   for (const input of panelInputs) {
     const key = input.dataset.param
@@ -344,6 +383,11 @@ function syncPanelInputs() {
     // vice versa (textures already lerp via TEX_FILTER).
     const scoped = input.closest('[data-backends]')
     if (scoped) scoped.hidden = !scoped.dataset.backends.split(' ').includes(params.backend)
+  }
+  // Asset slots follow the same rule (storage: GLB+BIN+JSON,
+  // texture: GLB+POSITIONS+NORMALS).
+  for (const slot of document.querySelectorAll('[data-slot][data-backends]')) {
+    slot.hidden = !slot.dataset.backends.split(' ').includes(params.backend)
   }
 }
 
@@ -372,8 +416,14 @@ for (const input of panelInputs) {
       }
       if (key === 'step' || key === 'smooth' || key === 'fps') setStatus([storageSummary + storagePlaybackSuffix()])
     }
-    if ((key === "texFilter" || key === "backend") && vat) {
+    if ((key === "texFilter") && vat) {
       reloadVat({ frameCamera: false }).catch(() => {})
+    }
+    if (key === "backend" && vat) {
+      // Refilter the example list (auto-loads a matching one); with
+      // dropped files or no manifest, retry current sources instead.
+      filterExamples()
+      if (hasDroppedSources() || !EXAMPLES.length) reloadVat({ frameCamera: false }).catch(() => {})
     }
     if (vat && params.backend !== 'storage') syncVatUniforms(vat.uniforms, params)
     syncPanelInputs()
@@ -471,6 +521,11 @@ function setSource(slot, file) {
   if (sources[slot]?.startsWith('blob:')) URL.revokeObjectURL(sources[slot])
   sources[slot] = URL.createObjectURL(file)
   setSlotLabel(slot, file.name, file.size)
+  // Dropped slot dictates the backend (a .bin without storage mode fails).
+  if (slot === 'storage' || slot === 'storageMeta') params.backend = 'storage'
+  if (slot === 'positions' || slot === 'normals') params.backend = 'texture'
+  syncPanelInputs()
+  filterExamples('__drop')
   reloadVat({ frameCamera: slot === 'mesh' }).catch(() => {})
 }
 
@@ -496,6 +551,23 @@ for (const card of document.querySelectorAll('[data-slot]')) {
   }
   card.addEventListener('drop', (event) => {
     if (event.dataTransfer.files[0]) setSource(slot, event.dataTransfer.files[0])
+  })
+}
+
+// --- Per-slot clear (×): empties the slot and reloads with the rest.
+// Clearing normals falls back to geometry normals; clearing anything
+// else errors loudly until a file is dropped again.
+for (const btn of document.querySelectorAll('[data-clear]')) {
+  for (const event of ['mousedown', 'click']) {
+    btn.addEventListener(event, (e) => e.stopPropagation())
+  }
+  btn.addEventListener('click', (e) => {
+    e.preventDefault()
+    const slot = btn.dataset.clear
+    if (sources[slot]?.startsWith('blob:')) URL.revokeObjectURL(sources[slot])
+    sources[slot] = ''
+    setSlotLabel(slot, '—', null)
+    reloadVat({ frameCamera: false }).catch(() => {})
   })
 }
 

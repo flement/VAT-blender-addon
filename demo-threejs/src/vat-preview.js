@@ -61,25 +61,29 @@ export function buildPreview({
 
   // --- Normals offscreen: PNG file rows are top-down = mem bottom-up,
   // so flip vertically on draw to land in mem order like positions.
-  const nimg = normalTexture.image;
-  const nW = nimg.width || W;
-  const nH = nimg.height || H;
-  const nrmOff = document.createElement("canvas");
-  nrmOff.width = nW;
-  nrmOff.height = nH;
-  const nctx = nrmOff.getContext("2d");
-  nctx.save();
-  nctx.translate(0, nH);
-  nctx.scale(1, -1);
-  nctx.drawImage(nimg, 0, 0, nW, nH);
-  nctx.restore();
+  // Optional: without a normals texture the canvas stays empty.
+  const nimg = normalTexture?.image;
+  const nW = nimg?.width || W;
+  const nH = nimg?.height || H;
+  let nrmOff = null;
+  if (nimg) {
+    nrmOff = document.createElement("canvas");
+    nrmOff.width = nW;
+    nrmOff.height = nH;
+    const nctx = nrmOff.getContext("2d");
+    nctx.save();
+    nctx.translate(0, nH);
+    nctx.scale(1, -1);
+    nctx.drawImage(nimg, 0, 0, nW, nH);
+    nctx.restore();
+  }
 
   posCanvas.width = W;
   posCanvas.height = H;
   nrmCanvas.width = nW;
   nrmCanvas.height = nH;
   posDims.textContent = `${W}x${H}`;
-  nrmDims.textContent = `${nW}x${nH}`;
+  nrmDims.textContent = nimg ? `${nW}x${nH}` : '—';
 
   function paint(canvas, off, rows) {
     const ctx = canvas.getContext("2d");
@@ -161,18 +165,22 @@ export function buildStoragePreview({
   }
 
   const posOff = paintArrays(offsets, false);
-  const nrmOff = paintArrays(normals, true);
+  const nrmOff = normals ? paintArrays(normals, true) : null;
   posCanvas.width = W;
   posCanvas.height = F;
   nrmCanvas.width = W;
   nrmCanvas.height = F;
   posDims.textContent = `${V}v x ${F}f`;
-  nrmDims.textContent = `${V}v x ${F}f`;
+  nrmDims.textContent = normals ? `${V}v x ${F}f` : '—';
 
   function paint(canvas, off, fi) {
     const ctx = canvas.getContext("2d");
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(off, 0, 0);
+    if (off) ctx.drawImage(off, 0, 0);
+    else {
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
     ctx.strokeStyle = "#fff";
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -188,7 +196,7 @@ export function buildStoragePreview({
     paint(posCanvas, posOff, F - 1 - fi);
     paint(nrmCanvas, nrmOff, F - 1 - fi);
     statusEl.textContent =
-      `frame ${fi} · mem row ${F - 1 - fi} · ${V} verts x ${F} frames · offsets [${meta.minOffset.toFixed(3)}, ${meta.maxOffset.toFixed(3)}]`;
+      `frame ${fi} · mem row ${F - 1 - fi} · ${V} verts x ${F} frames · offsets [${meta.minOffset.toFixed(3)}, ${meta.maxOffset.toFixed(3)}]${normals ? '' : ' · no normals (geometry)'}`;
   }
 
   update(0);

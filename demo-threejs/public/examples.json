@@ -377,7 +377,7 @@
     },
     {
       "id": "armature_storage",
-      "label": "VAT_Armature \u2014 170v (storage)",
+      "label": "Armature \u2014 170v ",
       "mesh": "/examples/armature_storage/armature_storage.glb",
       "storage": "/examples/armature_storage/armature_storage_vat.bin",
       "storageMeta": "/examples/armature_storage/armature_storage_vat.json",
@@ -391,7 +391,7 @@
     },
     {
       "id": "bevel_storage",
-      "label": "VAT_Bevel \u2014 96v (storage)",
+      "label": "Bevel \u2014 96v ",
       "mesh": "/examples/bevel_storage/bevel_storage.glb",
       "storage": "/examples/bevel_storage/bevel_storage_vat.bin",
       "storageMeta": "/examples/bevel_storage/bevel_storage_vat.json",
@@ -405,7 +405,7 @@
     },
     {
       "id": "cast_storage",
-      "label": "VAT_Cast \u2014 8v (storage)",
+      "label": "Cast \u2014 8v ",
       "mesh": "/examples/cast_storage/cast_storage.glb",
       "storage": "/examples/cast_storage/cast_storage_vat.bin",
       "storageMeta": "/examples/cast_storage/cast_storage_vat.json",
@@ -419,7 +419,7 @@
     },
     {
       "id": "cloth_storage",
-      "label": "VAT_Cloth \u2014 100v (storage)",
+      "label": "Cloth \u2014 100v ",
       "mesh": "/examples/cloth_storage/cloth_storage.glb",
       "storage": "/examples/cloth_storage/cloth_storage_vat.bin",
       "storageMeta": "/examples/cloth_storage/cloth_storage_vat.json",
@@ -433,7 +433,7 @@
     },
     {
       "id": "cloth_parent",
-      "label": "Cloth Parent \u2014 50k v (storage)",
+      "label": "Cloth Parent \u2014 50k v ",
       "mesh": "/examples/cloth_parent/cloth_parent.glb",
       "storage": "/examples/cloth_parent/cloth_parent_vat.bin",
       "storageMeta": "/examples/cloth_parent/cloth_parent_vat.json",
@@ -447,7 +447,7 @@
     },
     {
       "id": "correctivesmooth_storage",
-      "label": "VAT_CorrectiveSmooth \u2014 64v (storage)",
+      "label": "CorrectiveSmooth \u2014 64v ",
       "mesh": "/examples/correctivesmooth_storage/correctivesmooth_storage.glb",
       "storage": "/examples/correctivesmooth_storage/correctivesmooth_storage_vat.bin",
       "storageMeta": "/examples/correctivesmooth_storage/correctivesmooth_storage_vat.json",
@@ -461,7 +461,7 @@
     },
     {
       "id": "curve_storage",
-      "label": "VAT_Curve \u2014 64v (storage)",
+      "label": "Curve \u2014 64v ",
       "mesh": "/examples/curve_storage/curve_storage.glb",
       "storage": "/examples/curve_storage/curve_storage_vat.bin",
       "storageMeta": "/examples/curve_storage/curve_storage_vat.json",
@@ -475,7 +475,7 @@
     },
     {
       "id": "displace_storage",
-      "label": "VAT_Displace \u2014 64v (storage)",
+      "label": "Displace \u2014 64v ",
       "mesh": "/examples/displace_storage/displace_storage.glb",
       "storage": "/examples/displace_storage/displace_storage_vat.bin",
       "storageMeta": "/examples/displace_storage/displace_storage_vat.json",
@@ -489,7 +489,7 @@
     },
     {
       "id": "explode_storage",
-      "label": "VAT_Explode \u2014 144v (storage)",
+      "label": "Explode \u2014 144v ",
       "mesh": "/examples/explode_storage/explode_storage.glb",
       "storage": "/examples/explode_storage/explode_storage_vat.bin",
       "storageMeta": "/examples/explode_storage/explode_storage_vat.json",
@@ -503,7 +503,7 @@
     },
     {
       "id": "hook_storage",
-      "label": "VAT_Hook \u2014 64v (storage)",
+      "label": "Hook \u2014 64v ",
       "mesh": "/examples/hook_storage/hook_storage.glb",
       "storage": "/examples/hook_storage/hook_storage_vat.bin",
       "storageMeta": "/examples/hook_storage/hook_storage_vat.json",
@@ -517,7 +517,7 @@
     },
     {
       "id": "laplaciandeform_storage",
-      "label": "VAT_LaplacianDeform \u2014 36v (storage)",
+      "label": "LaplacianDeform \u2014 36v ",
       "mesh": "/examples/laplaciandeform_storage/laplaciandeform_storage.glb",
       "storage": "/examples/laplaciandeform_storage/laplaciandeform_storage_vat.bin",
       "storageMeta": "/examples/laplaciandeform_storage/laplaciandeform_storage_vat.json",
@@ -531,7 +531,7 @@
     },
     {
       "id": "laplaciansmooth_storage",
-      "label": "VAT_LaplacianSmooth \u2014 64v (storage)",
+      "label": "LaplacianSmooth \u2014 64v ",
       "mesh": "/examples/laplaciansmooth_storage/laplaciansmooth_storage.glb",
       "storage": "/examples/laplaciansmooth_storage/laplaciansmooth_storage_vat.bin",
       "storageMeta": "/examples/laplaciansmooth_storage/laplaciansmooth_storage_vat.json",
@@ -545,7 +545,7 @@
     },
     {
       "id": "lattice_storage",
-      "label": "VAT_Lattice \u2014 64v (storage)",
+      "label": "Lattice \u2014 64v ",
       "mesh": "/examples/lattice_storage/lattice_storage.glb",
       "storage": "/examples/lattice_storage/lattice_storage_vat.bin",
       "storageMeta": "/examples/lattice_storage/lattice_storage_vat.json",
@@ -559,7 +559,7 @@
     },
     {
       "id": "meshdeform_storage",
-      "label": "VAT_MeshDeform \u2014 64v (storage)",
+      "label": "MeshDeform \u2014 64v ",
       "mesh": "/examples/meshdeform_storage/meshdeform_storage.glb",
       "storage": "/examples/meshdeform_storage/meshdeform_storage_vat.bin",
       "storageMeta": "/examples/meshdeform_storage/meshdeform_storage_vat.json",
@@ -573,7 +573,7 @@
     },
     {
       "id": "nodes_storage",
-      "label": "VAT_Nodes \u2014 36v (storage)",
+      "label": "Nodes \u2014 36v ",
       "mesh": "/examples/nodes_storage/nodes_storage.glb",
       "storage": "/examples/nodes_storage/nodes_storage_vat.bin",
       "storageMeta": "/examples/nodes_storage/nodes_storage_vat.json",
@@ -587,7 +587,7 @@
     },
     {
       "id": "ocean_storage",
-      "label": "VAT_Ocean \u2014 2500v (storage)",
+      "label": "Ocean \u2014 2500v ",
       "mesh": "/examples/ocean_storage/ocean_storage.glb",
       "storage": "/examples/ocean_storage/ocean_storage_vat.bin",
       "storageMeta": "/examples/ocean_storage/ocean_storage_vat.json",
@@ -601,7 +601,7 @@
     },
     {
       "id": "shrinkwrap_storage",
-      "label": "VAT_Shrinkwrap \u2014 64v (storage)",
+      "label": "Shrinkwrap \u2014 64v ",
       "mesh": "/examples/shrinkwrap_storage/shrinkwrap_storage.glb",
       "storage": "/examples/shrinkwrap_storage/shrinkwrap_storage_vat.bin",
       "storageMeta": "/examples/shrinkwrap_storage/shrinkwrap_storage_vat.json",
@@ -615,7 +615,7 @@
     },
     {
       "id": "smooth_storage",
-      "label": "VAT_Smooth \u2014 64v (storage)",
+      "label": "Smooth \u2014 64v ",
       "mesh": "/examples/smooth_storage/smooth_storage.glb",
       "storage": "/examples/smooth_storage/smooth_storage_vat.bin",
       "storageMeta": "/examples/smooth_storage/smooth_storage_vat.json",
@@ -629,7 +629,7 @@
     },
     {
       "id": "softbody_storage",
-      "label": "VAT_Softbody \u2014 36v (storage)",
+      "label": "Softbody \u2014 36v ",
       "mesh": "/examples/softbody_storage/softbody_storage.glb",
       "storage": "/examples/softbody_storage/softbody_storage_vat.bin",
       "storageMeta": "/examples/softbody_storage/softbody_storage_vat.json",
@@ -643,7 +643,7 @@
     },
     {
       "id": "solidify_storage",
-      "label": "VAT_Solidify \u2014 72v (storage)",
+      "label": "Solidify \u2014 72v ",
       "mesh": "/examples/solidify_storage/solidify_storage.glb",
       "storage": "/examples/solidify_storage/solidify_storage_vat.bin",
       "storageMeta": "/examples/solidify_storage/solidify_storage_vat.json",
@@ -657,7 +657,7 @@
     },
     {
       "id": "subsurf_storage",
-      "label": "VAT_Subsurf \u2014 441v (storage)",
+      "label": "Subsurf \u2014 441v ",
       "mesh": "/examples/subsurf_storage/subsurf_storage.glb",
       "storage": "/examples/subsurf_storage/subsurf_storage_vat.bin",
       "storageMeta": "/examples/subsurf_storage/subsurf_storage_vat.json",
@@ -671,7 +671,7 @@
     },
     {
       "id": "surfacedeform_storage",
-      "label": "VAT_SurfaceDeform \u2014 64v (storage)",
+      "label": "SurfaceDeform \u2014 64v ",
       "mesh": "/examples/surfacedeform_storage/surfacedeform_storage.glb",
       "storage": "/examples/surfacedeform_storage/surfacedeform_storage_vat.bin",
       "storageMeta": "/examples/surfacedeform_storage/surfacedeform_storage_vat.json",
@@ -685,7 +685,7 @@
     },
     {
       "id": "twist_storage",
-      "label": "VAT_Twist \u2014 152v (storage)",
+      "label": "Twist \u2014 152v ",
       "mesh": "/examples/twist_storage/twist_storage.glb",
       "storage": "/examples/twist_storage/twist_storage_vat.bin",
       "storageMeta": "/examples/twist_storage/twist_storage_vat.json",
@@ -699,7 +699,7 @@
     },
     {
       "id": "warp_storage",
-      "label": "VAT_Warp \u2014 64v (storage)",
+      "label": "Warp \u2014 64v ",
       "mesh": "/examples/warp_storage/warp_storage.glb",
       "storage": "/examples/warp_storage/warp_storage_vat.bin",
       "storageMeta": "/examples/warp_storage/warp_storage_vat.json",
@@ -713,7 +713,7 @@
     },
     {
       "id": "wave_storage",
-      "label": "VAT_Wave \u2014 64v (storage)",
+      "label": "Wave \u2014 64v ",
       "mesh": "/examples/wave_storage/wave_storage.glb",
       "storage": "/examples/wave_storage/wave_storage_vat.bin",
       "storageMeta": "/examples/wave_storage/wave_storage_vat.json",
@@ -727,7 +727,7 @@
     },
     {
       "id": "wireframe_storage",
-      "label": "VAT_Wireframe \u2014 172v (storage)",
+      "label": "Wireframe \u2014 172v ",
       "mesh": "/examples/wireframe_storage/wireframe_storage.glb",
       "storage": "/examples/wireframe_storage/wireframe_storage_vat.bin",
       "storageMeta": "/examples/wireframe_storage/wireframe_storage_vat.json",

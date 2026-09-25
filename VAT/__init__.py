@@ -22,7 +22,7 @@
 bl_info = {
     "name": "VAT",
     "author": "Joshua Bogart and Clément Renou",
-    "version": (1, 0, 10),
+    "version": (1, 0, 11),
     "blender": (4, 2, 0),
     "location": "View3D > Sidebar > VAT Tab",
     "description": "A tool for storing per frame vertex data for use in a vertex shader.",
@@ -318,6 +318,9 @@ NORMAL_FORMATS = {
                      "error). Default."},
     'F32': {"layout": "f32x3", "bytes": 12, "label": "f32 (12 B)",
             "about": "Direction unquantized (raw float32). Reference."},
+    'NONE': {"layout": "none", "bytes": 0, "label": "none (0 B)",
+             "about": "Skip normals: lighting uses geometry normals. "
+                      "Smallest."},
 }
 
 
@@ -382,7 +385,7 @@ def write_storage_buffer(path, meta_path, offsets, normals, meta):
     coherence (frame-major strided same-vertex samples ~400 KB apart on
     dense meshes, invisible to gzip).
     Integer offsets are delta-coded per vertex (frame 0 absolute, then
-    frame-to-frame diffs as i16): cloth-style motion yields small diffs
+    frame-to-frame diffs in the abs width: i8 for u8, i16 for u16): cloth-style motion yields small diffs
     whose zero high bytes gzip crushes (~-35% on tested cloth sim vs
     vat-storage/1, bit-exact on decode). Oct normals are delta-coded the
     same way when it gzips smaller.
@@ -390,13 +393,17 @@ def write_storage_buffer(path, meta_path, offsets, normals, meta):
     (float cumsum would drift). When a motion spike exceeds i16 range,
     or plain absolute happens to gzip smaller (near-static meshes),
     offsets fall back to absolute transposed and meta flags it.
+    Layout "none" for normals stores no normal bytes at all (the
+    viewer falls back to geometry normals).
     """
     # Offsets are always range-quantized (uniform 1/65535 steps over the
     # baked range: ~0.15mm on a 10m range). This replaces the Normalize
     # toggle for storage: meta carries its own range, the loader inverts it.
     n = meta["vertexCount"] * meta["frameCount"]
-    assert len(offsets) == len(normals) == n * 4
     layout = meta["layout"]
+    skip_normals = layout["normals"] == "none"
+    assert len(offsets) == n * 4
+    assert len(normals) == (0 if skip_normals else n * 4)
     V, F = meta["vertexCount"], meta["frameCount"]
     xyz = [offsets[v * 4 + j] for v in range(n) for j in range(3)]
     min_o, max_o = min(xyz), max(xyz)
@@ -415,12 +422,15 @@ def write_storage_buffer(path, meta_path, offsets, normals, meta):
         qmax = atag = None
     else:
         raise ValueError(f"Unknown offsets layout {layout['offsets']!r}")
-    if layout["normals"] not in ("oct8x2", "f32x3"):
+    if layout["normals"] not in ("oct8x2", "f32x3", "none"):
         raise ValueError(f"Unknown normals layout {layout['normals']!r}")
     q = ([round((v - min_o) / span * qmax) for v in xyz]
          if qmax is not None else None)
 
     def pack_offsets(use_delta):
+        # Delta diffs reuse the abs width (u8 -> i8, u16 -> i16) so delta
+        # stays raw-size neutral; u8 falls back to absolute past +-127.
+        dtag = 'b' if atag == 'B' else 'h'
         out = bytearray()
         if q is not None:
             if use_delta:
@@ -429,7 +439,7 @@ def write_storage_buffer(path, meta_path, offsets, normals, meta):
                     prev = [q[(0 * V + v) * 3 + j] for j in range(3)]
                     for f in range(1, F):
                         cur = [q[(f * V + v) * 3 + j] for j in range(3)]
-                        out += struct.pack('<3h', *[cur[j] - prev[j] for j in range(3)])
+                        out += struct.pack(f'<3{dtag}', *[cur[j] - prev[j] for j in range(3)])
                         prev = cur
             else:
                 for v in range(V):
@@ -443,6 +453,8 @@ def write_storage_buffer(path, meta_path, offsets, normals, meta):
 
     def pack_normals(use_delta=False):
         out = bytearray()
+        if layout["normals"] == "none":
+            return out
         if layout["normals"] == "oct8x2":
             for v in range(V):
                 prev = None
@@ -462,10 +474,11 @@ def write_storage_buffer(path, meta_path, offsets, normals, meta):
         return out
 
     bpv = ({"u8x3": 3, "u16x3": 6, "f32x3": 12}[layout["offsets"]]
-           + {"oct8x2": 2, "f32x3": 12}[layout["normals"]])
+           + {"oct8x2": 2, "f32x3": 12, "none": 0}[layout["normals"]])
     # Keep the gzipped-smallest representation (same raw size either
     # way; near-static meshes can prefer absolute). Oct deltas always
-    # fit i16 (encoded range is +-127).
+    # fit i16 (encoded range is +-127); u8 offset diffs fit i8 up to
+    # +-127 per frame, u16 up to +-32767.
     if q is not None:
         maxd = 0
         for v in range(V):
@@ -474,7 +487,8 @@ def write_storage_buffer(path, meta_path, offsets, normals, meta):
                     d = abs(q[(f * V + v) * 3 + j] - q[((f - 1) * V + v) * 3 + j])
                     if d > maxd:
                         maxd = d
-        off_cands = ([(pack_offsets(True), True)] if maxd <= 32767 else []) \
+        dlim = 127 if atag == 'B' else 32767
+        off_cands = ([(pack_offsets(True), True)] if maxd <= dlim else []) \
             + [(pack_offsets(False), False)]
     else:
         off_cands = [(pack_offsets(False), False)]
@@ -588,8 +602,11 @@ class OBJECT_OT_ProcessAnimMeshes(bpy.types.Operator):
             # No Normalize rescale here (PNG-only): write_storage_buffer
             # derives its own range and stores it in the JSON sidecar.
             _storage_cache['offsets'] = list(offsets)
-            _storage_cache['normals'] = [n * 2.0 - 1.0 if i % 4 != 3 else n
-                                         for i, n in enumerate(normals)]
+            if NORMAL_FORMATS[vat.normal_precision]["layout"] == "none":
+                _storage_cache['normals'] = []
+            else:
+                _storage_cache['normals'] = [n * 2.0 - 1.0 if i % 4 != 3 else n
+                                             for i, n in enumerate(normals)]
             _storage_cache['vertex_count'] = max_count
             _storage_cache['frame_count'] = len(frame_range(context.scene))
             bpv = (OFFSET_FORMATS[vat.offset_precision]["bytes"]
@@ -771,12 +788,6 @@ class VIEW3D_PT_VertexAnimation(bpy.types.Panel):
                            f"({eval_verts:,} verts x {nframes} frames, current frame)")
             if scene.frame_step > 1:
                 col.label(text=f"Playback: {scene.render.fps / scene.frame_step:g} fps "
-                               f"(step {scene.frame_step}, smooth-lerped in viewer)")
-            if _storage_cache.get('vertex_count') and _storage_cache.get('frame_count'):
-                vc = _storage_cache['vertex_count']
-                fc = _storage_cache['frame_count']
-                col.label(text=f"Baked: {vc:,} verts x {fc} frames = "
-                               f"~{format_bytes(vc * fc * bpv)} raw")
         else:
             # Texture-only controls: no image is baked in Storage mode,
             # so flip/normalize/wrap have no effect there.
