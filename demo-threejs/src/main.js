@@ -39,6 +39,14 @@ const params = {
 }
 
 const sources = { mesh: '', positions: '', normals: '', storage: '', storageMeta: '' }
+// Original filenames per slot: blob: URLs carry no extension, so the
+// loader choice (EXR vs image) must use these, never sources[slot].
+const sourceNames = { mesh: '', positions: '', normals: '', storage: '', storageMeta: '' }
+// True when the dropped/picked file for a slot is an EXR (by filename,
+// falling back to the URL for remote examples).
+function isExrSlot(slot) {
+  return ((sourceNames[slot] || sources[slot] || '').toLowerCase().endsWith('.exr'))
+}
 let EXAMPLES = []
 let preview = null
 let lastPosTex = null
@@ -131,14 +139,45 @@ function showError(message) {
   overlayText.classList.add('error')
 }
 
-async function loadTexture(url, { flipY }) {
-  const loader = url.toLowerCase().endsWith('.exr') ? new EXRLoader() : new TextureLoader()
-  const texture = await loader.loadAsync(url)
-  texture.flipY = flipY
-  texture.colorSpace = NoColorSpace
-  texture.minFilter = texture.magFilter = params.texFilter === "linear" ? LinearFilter : NearestFilter
-  texture.needsUpdate = true
-  return texture
+// three.js loaders sometimes reject with something other than an Error
+// (string, ProgressEvent, undefined) -> error.message reads "undefined".
+// Normalize + include the failing slot for an actionable message.
+function describeError(err) {
+  if (err instanceof Error && err.message) return err.message
+  if (typeof err === 'string' && err) return err
+  if (err?.message) return String(err.message)
+  if (err?.type) return `${err.type}${err.loaded != null && err.total != null ? ` (${err.loaded}/${err.total} bytes)` : ''}`
+  try { return JSON.stringify(err) || String(err) } catch { return String(err) }
+}
+
+function shortName(url) {
+  try { return decodeURIComponent(url.split('/').pop().split('?')[0]) || url } catch { return url }
+}
+
+async function loadTexture(url, { flipY, label, isExr }) {
+  const loader = (isExr ?? url.toLowerCase().endsWith('.exr')) ? new EXRLoader() : new TextureLoader()
+  try {
+    const texture = await loader.loadAsync(url)
+    if (!texture?.image) throw new Error('decoded file has no image (corrupt or unsupported variant)')
+    texture.flipY = flipY
+    texture.colorSpace = NoColorSpace
+    texture.minFilter = texture.magFilter = params.texFilter === "linear" ? LinearFilter : NearestFilter
+    texture.needsUpdate = true
+    return texture
+  } catch (err) {
+    throw new Error(`${label ?? 'texture'} "${shortName(url)}" unreadable: ${describeError(err)}`)
+  }
+}
+
+// Prefer the mesh carrying the VAT ids (uv1), else uv, else the first one.
+// Avoids picking up a stray mesh (e.g. BSurfaceMesh without UVs).
+function pickVatMesh(gltf) {
+  const meshes = []
+  gltf.scene.traverse((o) => { if (o.isMesh) meshes.push(o) })
+  if (!meshes.length) return { mesh: null, meshes }
+  const withUv1 = meshes.find((m) => m.geometry.getAttribute('uv1'))
+  const withUv = meshes.find((m) => m.geometry.getAttribute('uv1') || m.geometry.getAttribute('uv'))
+  return { mesh: withUv1 ?? withUv ?? meshes[0], meshes }
 }
 
 function frameDuration() {
@@ -156,9 +195,18 @@ async function reloadVat({ frameCamera }) {
   overlayText.classList.remove('error')
   overlayText.textContent = 'Loading VAT assets…'
   try {
-    const gltf = await new GLTFLoader().loadAsync(sources.mesh)
-    const nextMesh = gltf.scene.children.find((child) => child.isMesh)
-    if (!nextMesh) throw new Error('No mesh found in the GLB')
+    if (!sources.mesh) throw new Error('Slot 01 (GLB) is empty: drop the Quick Export .glb')
+    let gltf
+    try {
+      gltf = await new GLTFLoader().loadAsync(sources.mesh)
+    } catch (err) {
+      throw new Error(`GLB "${shortName(sources.mesh)}" unreadable: ${describeError(err)}`)
+    }
+    const { mesh: nextMesh, meshes } = pickVatMesh(gltf)
+    if (!nextMesh) throw new Error(`No mesh in "${shortName(sources.mesh)}"`)
+    var meshWarn = meshes.length > 1
+      ? `Multi-mesh GLB (${meshes.length}): using "${nextMesh.name || 'unnamed'}" (the one with uv1/uv)`
+      : ''
 
     if (vatRoot) scene.remove(vatRoot)
     if (vat) {
@@ -221,19 +269,28 @@ async function reloadVat({ frameCamera }) {
         throw new Error('Mesh has no UVs (vertex_anim expected as second UV set)')
       }
       if (!sources.positions) throw new Error('Drop a positions texture below (slot 02)')
+      const posIsExr = isExrSlot('positions')
       const [positions, normals] = await Promise.all([
         // EXR arrives pre-flipped from EXRLoader (flipY=false avoids a
         // double flip); PNG needs the upload flip to land rows like EXR.
-        loadTexture(sources.positions, { flipY: !sources.positions.toLowerCase().endsWith('.exr') }),
-        sources.normals ? loadTexture(sources.normals, { flipY: true }) : null,
+        loadTexture(sources.positions, { flipY: !posIsExr, label: 'positions', isExr: posIsExr }),
+        sources.normals ? loadTexture(sources.normals, { flipY: true, label: 'normals', isExr: isExrSlot('normals') }) : null,
       ])
       const texW = positions.image.width
       const texH = positions.image.height
+      if (!texW || !texH) throw new Error(`positions "${shortName(sources.positions)}": invalid dimensions (${texW}x${texH})`)
+      if (texW < verts && params.numWraps <= 1 && params.frames > 0 && texH % params.frames === 0) {
+        // Auto-fix for the classic case: WRAP bake (W < verts) but panel still at 1 wrap.
+        params.numWraps = Math.max(1, Math.round(texH / params.frames))
+      }
       params.texHeight = texH
       vat = createVatMaterial({ positionTexture: positions, normalTexture: normals, params })
       syncVatUniforms(vat.uniforms, params)
       syncPanelInputs()
-      setStatus([`${params.wrapMode} ${texW}x${texH} | verts ${verts} | frames ${params.frames} x ${params.numWraps} wraps${normals ? '' : ' | no normals (geometry)'}`])
+      var wrapWarn = (params.frames * params.numWraps !== texH)
+        ? `⚠ mismatched wraps: frames(${params.frames}) x wraps(${params.numWraps}) = ${params.frames * params.numWraps} ≠ texH(${texH}) — fix Frames / Num Wraps`
+        : ''
+      setStatus([`${params.wrapMode} ${texW}x${texH} | verts ${verts} | frames ${params.frames} x ${params.numWraps} wraps | ${params.positionMode}${params.normalize ? ' norm' : ''}${normals ? '' : ' | no normals (geometry)'}`, ...(meshWarn ? [`⚠ ${meshWarn}`] : []), ...(wrapWarn ? [wrapWarn] : [])])
       lastPosTex = positions
       lastNrmTex = normals
       refreshPreview()
@@ -247,7 +304,8 @@ async function reloadVat({ frameCamera }) {
     overlay.hidden = true
     refreshSlotSizes().catch(() => {})
   } catch (error) {
-    showError(`Could not load VAT assets: ${error.message}`)
+    console.error('[VAT] load failed:', error)
+    showError(`Could not load VAT assets: ${describeError(error)}`)
     throw error
   }
 }
@@ -286,6 +344,7 @@ function applyExample(ex) {
     time: 0,
   })
   for (const [slot, url] of Object.entries(sources)) {
+    sourceNames[slot] = url ? decodeURIComponent(url.split('/').pop().split('?')[0]) : ''
     setSlotLabel(slot, url ? decodeURIComponent(url.split('/').pop()) : '—', null)
   }
 }
@@ -551,6 +610,7 @@ texResize.addEventListener('pointerdown', (e) => {
 function setSource(slot, file) {
   if (sources[slot]?.startsWith('blob:')) URL.revokeObjectURL(sources[slot])
   sources[slot] = URL.createObjectURL(file)
+  sourceNames[slot] = file.name || ''
   setSlotLabel(slot, file.name, file.size)
   // Dropped slot dictates the backend (a .bin without storage mode fails).
   if (slot === 'storage' || slot === 'storageMeta') params.backend = 'storage'
@@ -597,6 +657,7 @@ for (const btn of document.querySelectorAll('[data-clear]')) {
     const slot = btn.dataset.clear
     if (sources[slot]?.startsWith('blob:')) URL.revokeObjectURL(sources[slot])
     sources[slot] = ''
+    sourceNames[slot] = ''
     setSlotLabel(slot, '—', null)
     reloadVat({ frameCamera: false }).catch(() => {})
   })

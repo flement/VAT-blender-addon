@@ -94,7 +94,7 @@
       <section>
         <h2>03 / PLAYBACK</h2>
         <label class="row"><span>FPS <i class="hint" title="Base rate. Texture loops frames/FPS seconds; storage plays at FPS/STEP (same duration as a full-rate bake).">?</i></span><input type="number" data-param="fps" min="1" max="120" step="1" /></label>
-        <label class="row" data-backends="storage"><span>STEP <i class="hint" title="Export stride: samples every STEP-th baked row, effective rate = FPS/STEP.">?</i></span><input type="number" data-param="step" min="1" max="60" step="1" /></label>
+        <label class="row" data-backends="texture storage"><span>STEP <i class="hint" title="Export stride: effective rate = FPS/STEP (same duration as a full-rate bake).">?</i></span><input type="number" data-param="step" min="1" max="60" step="1" /></label>
         <label class="row check" data-backends="storage"><span>SMOOTH <i class="hint" title="Lerp between sampled rows (textures use TEX_FILTER instead).">?</i></span><input type="checkbox" data-param="smooth" checked /></label>
         <div class="btn-row">
           <button id="btn-frame-mesh" type="button" title="Fit the camera to the mesh bounds. [F]">FRAME_MESH <i class="hint" title="Fit the camera to the mesh bounds.">?</i></button>
